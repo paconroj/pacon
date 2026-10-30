@@ -1,0 +1,2781 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+PACON Service - v1.2.11
+=======================
+v1.2.11 changes (vs 1.2.10):
+  - device_screens[device_id] now stores geo_seq / geo_ts and REFUSES to
+    regress: a screenshot or screen-info with a LOWER geo_seq than the
+    currently-stored one will not overwrite the cached geometry. This
+    prevents a stale out-of-order packet from corrupting the dashboard.
+  - /api/control/screen-info/<id> returns geo_seq / geo_ts so the
+    dashboard can sanity-check freshness. It never returns width=0 when
+    a real geometry exists in: (1) memory cache, (2) newest in-memory
+    shot, (3) PIL probe of newest on-disk JPEG for that device.
+  - /api/screenshots returns origin_x / origin_y / geo_seq so that every
+    refresh from the dashboard keeps its geometry in sync with pixels.
+  - _last_known_screen_from_disk is now device-scoped: it only considers
+    files whose filename was last associated with that device in
+    `screenshots[]` OR (if the index has been pruned) whose filename
+    begins with "screenshot_" and whose mtime is recent — never picks
+    another device's shot.
+  - Screenshot retention: 600 s / 2000 entries (unchanged from 1.2.10).
+  - Retained v1.2.10 endpoints:
+      /api/control/swipe-normalized
+      /api/control/scroll-normalized
+      /api/control/click-normalized
+"""
+import os
+import sys
+import json
+import time
+import uuid
+import hmac
+import signal
+import secrets
+import threading
+import platform
+import socket
+import base64
+import logging
+import subprocess
+import urllib.request
+import urllib.error
+from pathlib import Path
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
+from collections import defaultdict, deque
+from functools import wraps
+from flask import (
+    Flask, request, jsonify, send_file, send_from_directory,
+    make_response, abort
+)
+from flask_cors import CORS
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+IS_WINDOWS = platform.system() == 'Windows'
+
+BASE_DIR       = Path.home() / '.pacon'
+SCREENSHOT_DIR = BASE_DIR / 'screenshots'
+LOGS_DIR       = BASE_DIR / 'logs'
+DATA_DIR       = BASE_DIR / 'data'
+CAMERA_DIR     = BASE_DIR / 'camera'
+FILES_DIR      = BASE_DIR / 'files'
+RECEIVED_DIR   = BASE_DIR / 'received'
+UPLOAD_DIR     = BASE_DIR / 'uploads'
+DEVICE_DIR     = BASE_DIR / 'devices'
+
+for d in [BASE_DIR, SCREENSHOT_DIR, LOGS_DIR, DATA_DIR,
+          CAMERA_DIR, FILES_DIR, RECEIVED_DIR, UPLOAD_DIR, DEVICE_DIR]:
+    d.mkdir(parents=True, exist_ok=True)
+
+# ============================================================
+# WEB DIRECTORY
+# ============================================================
+IS_RENDER = os.environ.get('RENDER', 'false').lower() == 'true'
+if IS_RENDER:
+    WEB_DIR = Path('/opt/render/project/src/web/public')
+else:
+    SCRIPT_DIR  = Path(__file__).parent
+    PROJECT_DIR = SCRIPT_DIR.parent
+    WEB_DIR     = PROJECT_DIR / 'web' / 'public'
+WEB_DIR.mkdir(parents=True, exist_ok=True)
+
+# ============================================================
+# LOGGER
+# ============================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# ============================================================
+# AUTH
+# ============================================================
+PARENT_PIN = os.environ.get('PARENT_PIN', '').strip()
+AGENT_PIN  = os.environ.get('AGENT_PIN',  '').strip()
+
+if not PARENT_PIN:
+    logger.warning("⚠️ PARENT_PIN not set — dashboard UNPROTECTED")
+elif not PARENT_PIN.isdigit() or len(PARENT_PIN) != 6:
+    logger.error("❌ PARENT_PIN must be exactly 6 digits")
+    PARENT_PIN = ""
+
+if not AGENT_PIN:
+    logger.warning("⚠️ AGENT_PIN not set — agents UNPROTECTED")
+elif not AGENT_PIN.isdigit() or len(AGENT_PIN) != 6:
+    logger.error("❌ AGENT_PIN must be exactly 6 digits")
+    AGENT_PIN = ""
+
+sessions = {}
+SESSION_TTL    = 24 * 3600
+SESSION_COOKIE = "pacon_session"
+login_attempts = defaultdict(list)
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_WINDOW       = 300
+
+# ============================================================
+# FLASK APP
+# ============================================================
+app = Flask(__name__)
+app.config['JSON_SORT_KEYS']     = False
+app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
+ALLOWED_ORIGINS = [
+    'https://service-ur14.onrender.com',
+    'http://localhost:5001',
+    'http://127.0.0.1:5001',
+]
+CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
+
+# ============================================================
+# DATA STORE
+# ============================================================
+devices             = {}
+screenshots         = []
+camera_photos       = []
+locations           = []
+app_usage           = []
+installed_apps      = {}
+browser_history     = []
+activities          = []
+activity_counter    = 0
+device_screens      = {}
+
+command_queues      = defaultdict(deque)
+command_results     = {}
+control_devices     = {}
+device_online_state = {}
+device_agent_pid    = {}
+
+device_fingerprint  = {}
+fingerprint_lock    = threading.Lock()
+
+poll_counts         = defaultdict(int)
+
+received_files       = []
+received_files_lock  = threading.Lock()
+MAX_RECEIVED_FILE_MB    = 50
+MAX_RECEIVED_TOTAL_MB   = 500
+
+ping_thread   = None
+ping_running  = False
+ping_interval = 240
+
+OFFLINE_THRESHOLD = 15
+OFFLINE_GRACE     = 30
+STALE_CUTOFF      = 300
+ORPHAN_CUTOFF     = 600
+RESULT_TTL        = 300
+PENDING_TTL       = 90
+APPS_GRACE        = 300
+
+SHOT_RETENTION_SEC = 600
+SHOT_MAX_ENTRIES   = 2000
+
+_stop_event = threading.Event()
+
+# ============================================================
+# UTILITY
+# ============================================================
+def add_activity(action: str, details: str, device_id: str = "unknown"):
+    global activity_counter
+    activity_counter += 1
+    activities.append({
+        'id':        activity_counter,
+        'timestamp': datetime.now().isoformat(),
+        'action':    action,
+        'details':   details,
+        'device_id': device_id,
+        'type':      'info',
+    })
+    if len(activities) > 500:
+        activities[:] = activities[-500:]
+
+
+def safe_filename(name: str) -> str:
+    import re
+    name = os.path.basename(name or "")
+    name = re.sub(r'[^\w.\-]', '_', name)
+    if not name or name in ('.', '..'):
+        name = 'invalid'
+    return name
+
+
+def _safe_eq(a: str, b: str) -> bool:
+    try:
+        return hmac.compare_digest(str(a).encode(), str(b).encode())
+    except Exception:
+        return False
+
+
+def _is_device_online(device_id: str, now: Optional[float] = None) -> bool:
+    if now is None:
+        now = time.time()
+    return (now - control_devices.get(device_id, 0)) < OFFLINE_THRESHOLD
+
+
+def _device_age(device_id: str, now: Optional[float] = None) -> Optional[float]:
+    if now is None:
+        now = time.time()
+    last_poll = control_devices.get(device_id, 0)
+    if not last_poll:
+        return None
+    return now - last_poll
+
+# ============================================================
+# CANONICAL ID
+# ============================================================
+def _fingerprint_for(hostname: str, public_ip: str) -> Optional[str]:
+    if not hostname and not public_ip:
+        return None
+    return f"{(hostname or '').strip().lower()}|{(public_ip or '').strip()}"
+
+
+def _is_placeholder_id(did: str) -> bool:
+    return bool(did) and (did.startswith("__") or did.endswith("__"))
+
+
+def _resolve_canonical_id(incoming_id: str,
+                          hostname: str = "",
+                          public_ip: str = "") -> str:
+    if _is_placeholder_id(incoming_id):
+        logger.warning(f"🚫 Refused placeholder device ID: {incoming_id}")
+        return incoming_id
+    fp = _fingerprint_for(hostname, public_ip)
+    if not fp:
+        return incoming_id
+    with fingerprint_lock:
+        existing = device_fingerprint.get(fp)
+        if existing and _is_placeholder_id(existing):
+            logger.info(f"🧹 Replacing placeholder fingerprint "
+                        f"{existing} → {incoming_id[:8]}")
+            device_fingerprint[fp] = incoming_id
+            return incoming_id
+        if existing and existing != incoming_id:
+            now = time.time()
+            last_poll = control_devices.get(existing, 0)
+            existing_age = now - last_poll if last_poll else None
+            if existing_age is not None and existing_age < OFFLINE_THRESHOLD * 4:
+                logger.warning(f"🔀 Fingerprint collision: {incoming_id[:8]} → "
+                               f"reusing canonical {existing[:8]}")
+                return existing
+            else:
+                logger.info(f"🔀 Canonical takeover: {existing[:8]} stale → "
+                            f"adopting {incoming_id[:8]}")
+                device_fingerprint[fp] = incoming_id
+                return incoming_id
+        else:
+            device_fingerprint[fp] = incoming_id
+            return incoming_id
+
+
+def _get_public_ip_from_request() -> str:
+    xff = request.headers.get('X-Forwarded-For', '')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.remote_addr or ''
+
+# ============================================================
+# AUTH CORE
+# ============================================================
+def _client_ip() -> str:
+    xff = request.headers.get('X-Forwarded-For', '')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+
+def _create_session() -> str:
+    token = secrets.token_urlsafe(32)
+    sessions[token] = {'ip': _client_ip(), 'created': time.time()}
+    return token
+
+
+def _is_valid_session(token: str) -> bool:
+    if not token:
+        return False
+    s = sessions.get(token)
+    if not s:
+        return False
+    if time.time() - s['created'] > SESSION_TTL:
+        sessions.pop(token, None)
+        return False
+    return True
+
+
+def _check_login_rate(ip: str) -> bool:
+    now = time.time()
+    bucket = login_attempts[ip]
+    bucket[:] = [t for t in bucket if now - t < LOGIN_WINDOW]
+    return len(bucket) < MAX_LOGIN_ATTEMPTS
+
+
+def _record_login_attempt(ip: str):
+    login_attempts[ip].append(time.time())
+
+
+def _clear_login_attempts(ip: str):
+    login_attempts.pop(ip, None)
+
+
+def _server_token_from_request():
+    h = request.headers.get('X-Server-Token')
+    if h:
+        return h
+    s = request.cookies.get(SESSION_COOKIE)
+    if s:
+        return s
+    return request.args.get('token', '')
+
+
+def require_parent_auth(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not PARENT_PIN:
+            return f(*args, **kwargs)
+        token = _server_token_from_request()
+        if _is_valid_session(token):
+            return f(*args, **kwargs)
+        return jsonify({'success': False, 'error': 'unauthorized'}), 401
+    return wrapper
+
+
+def require_agent_auth(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not AGENT_PIN:
+            return f(*args, **kwargs)
+        pin = (
+            request.headers.get('X-Agent-Pin')
+            or request.args.get('pin')
+            or ((request.json or {}).get('pin') if request.is_json else None)
+        )
+        if _safe_eq(pin, AGENT_PIN):
+            return f(*args, **kwargs)
+        logger.warning(f"🚫 Agent auth failed from {_client_ip()} on {request.path}")
+        return jsonify({'success': False, 'error': 'unauthorized'}), 401
+    return wrapper
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+rate_buckets = defaultdict(list)
+RATE_LIMITS = {
+    'default':    (240, 60),
+    'control':    (600, 60),
+    'screenshot': (300, 60),
+    'login':      (10, 300),
+    'telegram':   (30, 60),
+    'upload':     (60, 60),
+}
+
+
+def rate_limit(category='default'):
+    def deco(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            limit, window = RATE_LIMITS.get(category, RATE_LIMITS['default'])
+            key = f"{category}:{_client_ip()}"
+            now = time.time()
+            bucket = rate_buckets[key]
+            bucket[:] = [t for t in bucket if now - t < window]
+            if len(bucket) >= limit:
+                return jsonify({
+                    'success': False,
+                    'error': 'rate limit exceeded',
+                    'retry_after': window,
+                }), 429
+            bucket.append(now)
+            return f(*args, **kwargs)
+        return wrapper
+    return deco
+
+# ============================================================
+# SELF-PING
+# ============================================================
+def get_server_url():
+    if IS_RENDER:
+        render_url = os.environ.get('RENDER_EXTERNAL_URL', '')
+        if render_url:
+            return render_url.rstrip('/')
+        return 'https://service-ur14.onrender.com'
+    return 'http://localhost:5001'
+
+
+def ping_server():
+    global ping_running
+    url = f"{get_server_url()}/api/health"
+    while ping_running and not _stop_event.is_set():
+        try:
+            req = urllib.request.Request(url, method='GET')
+            req.add_header('User-Agent', 'PACON-SelfPing/1.2.11')
+            with urllib.request.urlopen(req, timeout=30) as response:
+                if response.status == 200:
+                    logger.debug("✅ Self-ping OK")
+        except Exception as e:
+            logger.warning(f"⚠️ Self-ping failed: {e}")
+        _stop_event.wait(ping_interval)
+
+
+def start_ping_system():
+    global ping_thread, ping_running
+    if ping_running:
+        return
+    ping_running = True
+    ping_thread = threading.Thread(target=ping_server, daemon=True, name="self-ping")
+    ping_thread.start()
+    logger.info(f"🔄 Self-ping started ({get_server_url()})")
+
+# ============================================================
+# TELEGRAM
+# ============================================================
+TELEGRAM_CONFIG_FILE = DATA_DIR / "telegram.json"
+
+telegram_config = {
+    "bot_token":      "",
+    "chat_id":        "",
+    "enabled":        False,
+    "notify_online":  True,
+    "notify_offline": True,
+}
+
+
+def _load_telegram_config():
+    global telegram_config
+    try:
+        if TELEGRAM_CONFIG_FILE.exists():
+            with open(TELEGRAM_CONFIG_FILE, "r", encoding="utf-8") as f:
+                telegram_config.update(json.load(f))
+            logger.info(f"📲 Telegram config loaded (enabled={telegram_config['enabled']})")
+    except Exception as e:
+        logger.warning(f"Telegram config load failed: {e}")
+
+
+def _save_telegram_config():
+    try:
+        with open(TELEGRAM_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(telegram_config, f, indent=2)
+    except Exception as e:
+        logger.error(f"Telegram config save failed: {e}")
+
+
+_load_telegram_config()
+
+
+def _telegram_api_url(method: str) -> str:
+    return f"https://api.telegram.org/bot{telegram_config['bot_token']}/{method}"
+
+
+def _telegram_send_message(text: str, parse_mode: str = "HTML") -> dict:
+    if not telegram_config.get("enabled"):
+        return {"success": False, "error": "Telegram is disabled"}
+    if not telegram_config.get("bot_token"):
+        return {"success": False, "error": "Bot token is empty"}
+    if not telegram_config.get("chat_id"):
+        return {"success": False, "error": "Chat ID is empty"}
+    try:
+        import urllib.parse
+        url = _telegram_api_url("sendMessage")
+        payload = urllib.parse.urlencode({
+            "chat_id":                  telegram_config["chat_id"],
+            "text":                     text[:4096],
+            "parse_mode":               parse_mode,
+            "disable_web_page_preview": "true",
+        }).encode("utf-8")
+        req = urllib.request.Request(url, data=payload, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            body = json.loads(r.read().decode("utf-8"))
+            if body.get("ok"):
+                return {"success": True, "result": body}
+            return {"success": False, "error": body.get("description", "unknown")}
+    except urllib.error.HTTPError as he:
+        try:
+            err_body = he.read().decode("utf-8")
+            try:
+                err_desc = json.loads(err_body).get("description", err_body[:200])
+            except Exception:
+                err_desc = err_body[:200]
+            return {"success": False, "error": f"HTTP {he.code}: {err_desc}"}
+        except Exception:
+            return {"success": False, "error": f"HTTP {he.code}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _telegram_upload(endpoint: str, field: str, filepath: Path, caption: str = "") -> dict:
+    if not telegram_config.get("enabled"):
+        return {"success": False, "error": "Telegram is disabled"}
+    if not telegram_config.get("bot_token"):
+        return {"success": False, "error": "Bot token is empty"}
+    if not telegram_config.get("chat_id"):
+        return {"success": False, "error": "Chat ID is empty"}
+    if not filepath.exists():
+        return {"success": False, "error": f"File not found: {filepath.name}"}
+    file_size = filepath.stat().st_size
+    if file_size == 0:
+        return {"success": False, "error": "File is empty"}
+    if file_size > 50 * 1024 * 1024:
+        return {"success": False,
+                "error": f"file too large for Telegram "
+                         f"({file_size // 1024 // 1024}MB > 50MB)"}
+    if field == "photo" and file_size > 10 * 1024 * 1024:
+        return _telegram_upload("sendDocument", "document", filepath, caption)
+    try:
+        import mimetypes
+        boundary = "----TelegramBoundary" + secrets.token_hex(16)
+        mime = mimetypes.guess_type(str(filepath))[0] or "application/octet-stream"
+        parts = []
+        parts.append(f"--{boundary}\r\n".encode())
+        parts.append(b'Content-Disposition: form-data; name="chat_id"\r\n\r\n')
+        parts.append(f"{telegram_config['chat_id']}\r\n".encode())
+        if caption:
+            parts.append(f"--{boundary}\r\n".encode())
+            parts.append(b'Content-Disposition: form-data; name="caption"\r\n\r\n')
+            parts.append(f"{caption[:1024]}\r\n".encode())
+            parts.append(f"--{boundary}\r\n".encode())
+            parts.append(b'Content-Disposition: form-data; name="parse_mode"\r\n\r\n')
+            parts.append(b"HTML\r\n")
+        parts.append(f"--{boundary}\r\n".encode())
+        parts.append(
+            f'Content-Disposition: form-data; name="{field}"; '
+            f'filename="{filepath.name}"\r\n'.encode()
+        )
+        parts.append(f"Content-Type: {mime}\r\n\r\n".encode())
+        with open(filepath, "rb") as f:
+            parts.append(f.read())
+        parts.append(f"\r\n--{boundary}--\r\n".encode())
+        body = b"".join(parts)
+        url = _telegram_api_url(endpoint)
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+        req.add_header("Content-Length", str(len(body)))
+        with urllib.request.urlopen(req, timeout=120) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+            if resp.get("ok"):
+                return {"success": True, "result": resp}
+            return {"success": False, "error": resp.get("description", "unknown")}
+    except urllib.error.HTTPError as he:
+        try:
+            err_body = he.read().decode("utf-8")
+            try:
+                err_desc = json.loads(err_body).get("description", err_body[:200])
+            except Exception:
+                err_desc = err_body[:200]
+            return {"success": False, "error": f"HTTP {he.code}: {err_desc}"}
+        except Exception:
+            return {"success": False, "error": f"HTTP {he.code}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _telegram_send_photo(filepath: Path, caption: str = "") -> dict:
+    return _telegram_upload("sendPhoto", "photo", filepath, caption)
+
+
+def _telegram_send_document(filepath: Path, caption: str = "") -> dict:
+    return _telegram_upload("sendDocument", "document", filepath, caption)
+
+# ============================================================
+# ONLINE / OFFLINE STATE
+# ============================================================
+def _notify_state_change(device_id: str, is_online: bool):
+    info  = devices.get(device_id, {})
+    name  = info.get('name', 'Unknown')
+    model = info.get('model', 'Unknown')
+    if is_online and telegram_config.get("notify_online", True):
+        _telegram_send_message(
+            f"🟢 <b>Device Online</b>\n"
+            f"👤 {name}\n💻 {model}\n"
+            f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        logger.info(f"📲 Sent ONLINE notification for {device_id[:8]}")
+    elif (not is_online) and telegram_config.get("notify_offline", True):
+        _telegram_send_message(
+            f"🔴 <b>Device Offline</b>\n"
+            f"👤 {name}\n💻 {model}\n"
+            f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        logger.info(f"📲 Sent OFFLINE notification for {device_id[:8]}")
+
+
+def _mark_device_online(device_id: str):
+    was_online = device_online_state.get(device_id)
+    device_online_state[device_id] = True
+    if was_online is False:
+        _notify_state_change(device_id, True)
+
+
+def _purge_device_data(device_id: str):
+    try:
+        removed_apps = len(installed_apps.pop(device_id, []))
+        device_screens.pop(device_id, None)
+        command_queues.pop(device_id, None)
+
+        global screenshots
+        before = len(screenshots)
+        screenshots = [s for s in screenshots if s.get('device_id') != device_id]
+        removed_shots = before - len(screenshots)
+
+        if device_id in devices:
+            devices[device_id]['status']    = 'offline'
+            devices[device_id]['last_seen'] = datetime.now().isoformat()
+
+        stale_cids = [cid for cid, r in command_results.items()
+                      if r.get('deviceId') == device_id]
+        for cid in stale_cids:
+            command_results.pop(cid, None)
+
+        logger.info(f"🧹 Purged {device_id[:8]}: "
+                    f"{removed_apps} apps, {removed_shots} shots, "
+                    f"{len(stale_cids)} results")
+        add_activity('purge', f'Purged cached data for {device_id[:8]}', device_id)
+    except Exception as e:
+        logger.warning(f"Purge error for {device_id[:8]}: {e}")
+
+
+def _cleanup_pending_registrations():
+    now = time.time()
+    removed = []
+    for did, info in list(devices.items()):
+        if did in control_devices:
+            continue
+        last_seen = info.get('last_seen', '')
+        if not last_seen:
+            continue
+        try:
+            seen_age = now - datetime.fromisoformat(last_seen).timestamp()
+        except Exception:
+            continue
+        if seen_age > PENDING_TTL:
+            devices.pop(did, None)
+            device_agent_pid.pop(did, None)
+            device_online_state.pop(did, None)
+            removed.append(did)
+    if removed:
+        logger.info(f"🧹 Removed {len(removed)} pending device(s): "
+                    f"{[d[:8] for d in removed]}")
+
+
+def _cleanup_orphans():
+    global received_files
+    now = time.time()
+    removed = []
+    all_ids = set(devices.keys()) | set(control_devices.keys())
+
+    for did in list(devices.keys()):
+        if _is_placeholder_id(did):
+            devices.pop(did, None)
+            control_devices.pop(did, None)
+            device_online_state.pop(did, None)
+            installed_apps.pop(did, None)
+            device_screens.pop(did, None)
+            device_agent_pid.pop(did, None)
+            removed.append(did)
+
+    for did in all_ids:
+        info = devices.get(did, {})
+        last_poll = control_devices.get(did, 0)
+        poll_age = (now - last_poll) if last_poll else None
+        reg_age = None
+        ls = info.get('last_seen', '')
+        if ls:
+            try:
+                reg_age = now - datetime.fromisoformat(ls).timestamp()
+            except Exception:
+                reg_age = None
+        ages = [a for a in (poll_age, reg_age) if a is not None]
+        age = min(ages) if ages else None
+
+        if age is not None and age > ORPHAN_CUTOFF:
+            devices.pop(did, None)
+            installed_apps.pop(did, None)
+            device_screens.pop(did, None)
+            control_devices.pop(did, None)
+            device_online_state.pop(did, None)
+            command_queues.pop(did, None)
+            device_agent_pid.pop(did, None)
+            screenshots[:] = [s for s in screenshots if s.get('device_id') != did]
+            removed.append(did)
+            with fingerprint_lock:
+                for fp, cid in list(device_fingerprint.items()):
+                    if cid == did:
+                        device_fingerprint.pop(fp, None)
+    if removed:
+        logger.info(f"🧹 Orphan cleanup: removed {len(removed)} device(s): "
+                    f"{[d[:8] for d in removed]}")
+
+    with received_files_lock:
+        total = sum(f['size'] for f in received_files)
+        while total > MAX_RECEIVED_TOTAL_MB * 1024 * 1024 and received_files:
+            oldest = received_files.pop(0)
+            try:
+                if 'disk_path' in oldest:
+                    os.remove(oldest['disk_path'])
+            except Exception:
+                pass
+            total -= oldest.get('size', 0)
+
+
+def _cleanup_command_results():
+    now = time.time()
+    stale = [cid for cid, r in command_results.items()
+             if now - r.get('timestamp', 0) > RESULT_TTL]
+    for cid in stale:
+        command_results.pop(cid, None)
+
+
+def _device_watchdog():
+    last_cleanup = time.time()
+    while not _stop_event.is_set():
+        try:
+            _stop_event.wait(10)
+            if _stop_event.is_set():
+                break
+            now = time.time()
+            for device_id in list(device_online_state.keys()):
+                last_poll  = control_devices.get(device_id, 0)
+                is_online  = (now - last_poll) < OFFLINE_THRESHOLD
+                was_online = device_online_state.get(device_id)
+
+                if was_online and not is_online:
+                    device_online_state[device_id] = False
+                    _notify_state_change(device_id, False)
+
+                    def _delayed_purge(did, delay=OFFLINE_GRACE):
+                        _stop_event.wait(delay)
+                        if _stop_event.is_set():
+                            return
+                        last = control_devices.get(did, 0)
+                        if (time.time() - last) >= OFFLINE_THRESHOLD:
+                            _purge_device_data(did)
+
+                    threading.Thread(
+                        target=_delayed_purge, args=(device_id,), daemon=True
+                    ).start()
+
+            if now - last_cleanup > 30:
+                _cleanup_orphans()
+                _cleanup_command_results()
+                _cleanup_pending_registrations()
+                last_cleanup = now
+        except Exception as e:
+            logger.debug(f"Watchdog error: {e}")
+
+
+_watchdog_thread = None
+
+
+def start_watchdog():
+    global _watchdog_thread
+    if _watchdog_thread is None or not _watchdog_thread.is_alive():
+        _watchdog_thread = threading.Thread(
+            target=_device_watchdog, daemon=True, name="watchdog"
+        )
+        _watchdog_thread.start()
+        logger.info("👁️ Device watchdog started")
+
+# ============================================================
+# SCREEN GEOMETRY — atomic, monotonic, per-device
+# ============================================================
+def _prune_screenshot_index():
+    now = time.time()
+    screenshots[:] = [s for s in screenshots
+                      if now - s.get('_ts', now) <= SHOT_RETENTION_SEC]
+    if len(screenshots) > SHOT_MAX_ENTRIES:
+        screenshots[:] = screenshots[-SHOT_MAX_ENTRIES:]
+
+
+def _update_device_screen(device_id: str, geo: dict) -> bool:
+    """Atomically update device_screens[device_id] if the incoming geo_seq
+       is newer than what we have. Returns True if accepted."""
+    incoming_seq = int(geo.get('geo_seq', 0) or 0)
+    incoming_ts  = int(geo.get('geo_ts', 0) or 0)
+    prev = device_screens.get(device_id, {})
+    prev_seq = int(prev.get('geo_seq', 0) or 0)
+    if prev and incoming_seq and prev_seq and incoming_seq < prev_seq:
+        logger.debug(f"geometry out-of-order for {device_id[:8]}: "
+                     f"seq {incoming_seq} < {prev_seq} — ignoring")
+        return False
+    device_screens[device_id] = {
+        'width':         int(geo.get('width', 0) or 0),
+        'height':        int(geo.get('height', 0) or 0),
+        'origin_x':      int(geo.get('origin_x', 0) or 0),
+        'origin_y':      int(geo.get('origin_y', 0) or 0),
+        'monitors':      geo.get('monitors', []),
+        'density':       int(geo.get('density', 96)) or 96,
+        'dpi_mode':      geo.get('dpi_mode', 'unknown'),
+        'agent_version': geo.get('agent_version', 'unknown'),
+        'geo_seq':       incoming_seq,
+        'geo_ts':        incoming_ts,
+        'updated_at':    datetime.now().isoformat(),
+    }
+    return True
+
+
+def _last_known_screen_from_disk(device_id: str) -> Optional[dict]:
+    """Device-scoped PIL fallback: probe only screenshots that we've
+       associated with this device (from the in-memory index) OR — if
+       index was pruned — those whose filename is the newest 'screenshot_'
+       file and whose mtime is within SHOT_RETENTION_SEC."""
+    if not device_id:
+        return None
+    try:
+        from PIL import Image  # noqa
+    except Exception:
+        return None
+
+    now = time.time()
+    # Pass 1: any indexed shot for this device still on disk.
+    try:
+        for s in reversed(screenshots):
+            if s.get('device_id') != device_id:
+                continue
+            fn = s.get('filename')
+            if not fn:
+                continue
+            for d in (UPLOAD_DIR, SCREENSHOT_DIR):
+                p = d / fn
+                if p.exists():
+                    try:
+                        with Image.open(p) as im:
+                            return {
+                                'width':     int(im.width),
+                                'height':    int(im.height),
+                                'origin_x':  int(s.get('origin_x', 0) or 0),
+                                'origin_y':  int(s.get('origin_y', 0) or 0),
+                                'monitors':  s.get('monitors', []),
+                                'density':   96,
+                                'geo_seq':   int(s.get('geo_seq', 0) or 0),
+                                'geo_ts':    int(s.get('geo_ts', 0) or 0),
+                                'source':    'disk_indexed',
+                                'filename':  fn,
+                            }
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # Pass 2: index was pruned — scan recent files only.
+    candidates = []
+    for directory in [UPLOAD_DIR, SCREENSHOT_DIR]:
+        for ext in ('*.jpg', '*.jpeg', '*.png'):
+            for f in directory.glob(ext):
+                try:
+                    mtime = f.stat().st_mtime
+                    if now - mtime > SHOT_RETENTION_SEC:
+                        continue
+                    candidates.append((mtime, f))
+                except Exception:
+                    pass
+    candidates.sort(reverse=True)
+    for mtime, f in candidates[:10]:
+        try:
+            with Image.open(f) as im:
+                return {
+                    'width':     int(im.width),
+                    'height':    int(im.height),
+                    'origin_x':  0,
+                    'origin_y':  0,
+                    'monitors':  [],
+                    'density':   96,
+                    'geo_seq':   0,
+                    'geo_ts':    int(mtime * 1000),
+                    'source':    'disk_unindexed',
+                    'filename':  f.name,
+                }
+        except Exception:
+            continue
+    return None
+
+# ============================================================
+# AUTH ENDPOINTS
+# ============================================================
+@app.route('/api/auth/login', methods=['POST', 'OPTIONS'])
+@rate_limit('login')
+def auth_login():
+    if request.method == 'OPTIONS':
+        return '', 204
+    if not PARENT_PIN:
+        token = _create_session()
+        resp = make_response(jsonify({'success': True, 'dev_mode': True}))
+        resp.set_cookie(SESSION_COOKIE, token, httponly=True,
+                        samesite='Lax', max_age=SESSION_TTL)
+        return resp
+    ip = _client_ip()
+    if not _check_login_rate(ip):
+        return jsonify({
+            'success': False,
+            'error': 'too many attempts',
+            'retry_after': LOGIN_WINDOW,
+        }), 429
+    data = request.json or {}
+    pin  = str(data.get('pin', '')).strip()
+    if not pin.isdigit() or len(pin) != 6:
+        _record_login_attempt(ip)
+        return jsonify({'success': False, 'error': 'PIN must be 6 digits'}), 400
+    if not _safe_eq(pin, PARENT_PIN):
+        _record_login_attempt(ip)
+        logger.warning(f"🚫 Wrong PIN from {ip}")
+        return jsonify({'success': False, 'error': 'incorrect PIN'}), 401
+    _clear_login_attempts(ip)
+    token = _create_session()
+    logger.info(f"✅ Login success from {ip}")
+    add_activity('login', f'Parent login from {ip}')
+    resp = make_response(jsonify({'success': True}))
+    resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite='Lax',
+                    secure=IS_RENDER, max_age=SESSION_TTL)
+    return resp
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def auth_logout():
+    token = request.cookies.get(SESSION_COOKIE, '')
+    sessions.pop(token, None)
+    resp = make_response(jsonify({'success': True}))
+    resp.delete_cookie(SESSION_COOKIE)
+    return resp
+
+
+@app.route('/api/auth/verify', methods=['GET'])
+def auth_verify():
+    if not PARENT_PIN:
+        return jsonify({'success': True, 'valid': True, 'dev_mode': True})
+    token = _server_token_from_request()
+    if _is_valid_session(token):
+        return jsonify({'success': True, 'valid': True})
+    return jsonify({'success': False, 'valid': False}), 401
+
+
+@app.route('/api/auth/status', methods=['GET'])
+def auth_status():
+    return jsonify({
+        'success':      True,
+        'requires_pin': bool(PARENT_PIN),
+        'has_session':  _is_valid_session(request.cookies.get(SESSION_COOKIE, '')),
+    })
+
+# ============================================================
+# WEB UI
+# ============================================================
+@app.route('/')
+def serve_index():
+    index_path = WEB_DIR / 'index.html'
+    if index_path.exists():
+        return send_from_directory(str(WEB_DIR), 'index.html')
+    return get_fallback_html()
+
+
+@app.route('/index.html')
+def serve_index_html():
+    index_path = WEB_DIR / 'index.html'
+    if index_path.exists():
+        return send_from_directory(str(WEB_DIR), 'index.html')
+    return get_fallback_html()
+
+
+@app.route('/<path:path>')
+def serve_static(path):
+    file_path = WEB_DIR / path
+    if file_path.exists() and file_path.is_file():
+        return send_from_directory(str(WEB_DIR), path)
+    return jsonify({"error": "File not found"}), 404
+
+
+def get_fallback_html():
+    return ('<!DOCTYPE html><html><body style="background:#000;color:#0f0;'
+            'font-family:monospace;padding:20px;">'
+            '<h1>🛡️ PACON v1.2.11</h1>'
+            '<p>index.html not found in web/public/</p></body></html>')
+
+# ============================================================
+# HEALTH
+# ============================================================
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    now = time.time()
+    online_agents = sum(1 for did in devices
+                        if _is_device_online(did, now))
+    return jsonify({
+        "success":          True,
+        "service":          "PACON API",
+        "status":           "running",
+        "version":          "1.2.11",
+        "platform":         platform.system(),
+        "devices":          len(devices),
+        "online_agents":    online_agents,
+        "fingerprints":     len(device_fingerprint),
+        "is_render":        IS_RENDER,
+        "requires_pin":     bool(PARENT_PIN),
+        "telegram_enabled": telegram_config.get("enabled", False),
+        "self_ping":        ping_running,
+        "watchdog_alive":   bool(_watchdog_thread and _watchdog_thread.is_alive()),
+        "results_cached":   len(command_results),
+        "queued_commands":  sum(len(q) for q in command_queues.values()),
+        "received_files":   len(received_files),
+        "timestamp":        datetime.now().isoformat(),
+    })
+
+# ============================================================
+# STATELESS AGENT AUTH
+# ============================================================
+@app.route('/api/agent/ping', methods=['GET'])
+@require_agent_auth
+def agent_ping():
+    return jsonify({
+        'success':      True,
+        'pong':         True,
+        'server_time':  datetime.now().isoformat(),
+        'client_ip':    _client_ip(),
+        'agent_pin_ok': True,
+    })
+
+
+@app.route('/api/debug/clear-preflight', methods=['POST'])
+@require_parent_auth
+def clear_preflight():
+    removed = []
+    for did in list(devices.keys()):
+        if did == "__preflight__" or did.startswith("__"):
+            devices.pop(did, None)
+            control_devices.pop(did, None)
+            device_online_state.pop(did, None)
+            installed_apps.pop(did, None)
+            device_screens.pop(did, None)
+            device_agent_pid.pop(did, None)
+            screenshots[:] = [s for s in screenshots if s.get('device_id') != did]
+            removed.append(did)
+    with fingerprint_lock:
+        for fp, cid in list(device_fingerprint.items()):
+            if cid == "__preflight__" or (cid and cid.startswith("__")):
+                device_fingerprint.pop(fp, None)
+                removed.append(f"fp({fp[:30]})")
+    logger.info(f"🧹 Cleared preflight ghosts: {removed}")
+    return jsonify({'success': True, 'removed': removed})
+
+
+@app.route('/api/debug/devices', methods=['GET'])
+@require_parent_auth
+def debug_devices():
+    now = time.time()
+    out = {}
+    for did, info in devices.items():
+        age      = _device_age(did, now)
+        pid_info = device_agent_pid.get(did, {})
+        has_polled = did in control_devices
+        screen = device_screens.get(did, {})
+        out[did] = {
+            'name':             info.get('name'),
+            'model':            info.get('model'),
+            'hostname':         info.get('hostname'),
+            'machine_guid':     info.get('machine_guid'),
+            'public_ip':        info.get('public_ip'),
+            'last_seen':        info.get('last_seen'),
+            'status':           info.get('status', 'unknown'),
+            'last_poll_secs':   int(age) if age is not None else None,
+            'online':           (age is not None and age < OFFLINE_THRESHOLD),
+            'has_polled':       has_polled,
+            'has_apps':         did in installed_apps,
+            'app_count':        len(installed_apps.get(did, [])),
+            'has_screen_info':  did in device_screens,
+            'screen': {
+                'width':    screen.get('width'),
+                'height':   screen.get('height'),
+                'origin_x': screen.get('origin_x'),
+                'origin_y': screen.get('origin_y'),
+                'geo_seq':  screen.get('geo_seq'),
+                'geo_ts':   screen.get('geo_ts'),
+            },
+            'queued_cmds':      len(command_queues.get(did, [])),
+            'agent_pid':        pid_info.get('pid'),
+            'agent_version':    pid_info.get('version'),
+            'agent_first_seen': pid_info.get('first_seen'),
+        }
+    fp_out = {}
+    with fingerprint_lock:
+        for fp, cid in device_fingerprint.items():
+            fp_out[fp] = cid[:8] if cid else None
+
+    return jsonify({
+        'success':           True,
+        'devices':           out,
+        'fingerprints':      fp_out,
+        'server_now':        datetime.now().isoformat(),
+        'offline_threshold': OFFLINE_THRESHOLD,
+        'offline_grace':     OFFLINE_GRACE,
+        'stale_cutoff':      STALE_CUTOFF,
+        'orphan_cutoff':     ORPHAN_CUTOFF,
+        'pending_ttl':       PENDING_TTL,
+        'result_ttl':        RESULT_TTL,
+        'apps_grace':        APPS_GRACE,
+    })
+
+
+@app.route('/api/debug/apps-status', methods=['GET'])
+@require_parent_auth
+def debug_apps_status():
+    now = time.time()
+    out = {}
+    for did, info in devices.items():
+        age = now - control_devices.get(did, 0) if did in control_devices else None
+        has_apps = did in installed_apps
+        app_count = len(installed_apps.get(did, []))
+        would_serve = (
+            did in control_devices and age is not None
+            and age < APPS_GRACE and has_apps
+        )
+        out[did] = {
+            'name':              info.get('name'),
+            'has_polled':        did in control_devices,
+            'age_secs':          int(age) if age is not None else None,
+            'online':            (age is not None and age < OFFLINE_THRESHOLD),
+            'has_apps_cache':    has_apps,
+            'app_count':         app_count,
+            'apps_would_serve':  would_serve,
+        }
+    return jsonify({
+        'success':                  True,
+        'devices':                  out,
+        'installed_apps_keys':      [k[:8] for k in installed_apps.keys()],
+        'control_devices_keys':     [k[:8] for k in control_devices.keys()],
+        'apps_grace_seconds':       APPS_GRACE,
+        'server_time':              datetime.now().isoformat(),
+    })
+
+# ============================================================
+# STATUS & DEVICES
+# ============================================================
+@app.route('/api/status', methods=['GET'])
+@require_parent_auth
+def get_status():
+    user_info = {}
+    if devices:
+        first = list(devices.values())[0]
+        user_info = {
+            'full_name':     first.get('name', ''),
+            'email':         first.get('email', ''),
+            'company':       first.get('company', ''),
+            'computer_name': first.get('model', 'Unknown'),
+            'device_count':  len(devices),
+        }
+    now = time.time()
+    online_states = {d: _is_device_online(d, now) for d in devices.keys()}
+    return jsonify({
+        "success":         True,
+        "is_running":      True,
+        "active_children": list(devices.keys()),
+        "platform":        platform.system(),
+        "user_info":       user_info,
+        "online_agents":   online_states,
+        "stats": {
+            "screenshots":     len(screenshots),
+            "camera_photos":   len(camera_photos),
+            "locations":       len(locations),
+            "app_usage":       len(app_usage),
+            "installed_apps":  sum(len(v) for v in installed_apps.values()),
+            "devices":         len(devices),
+            "control_devices": len(control_devices),
+            "received_files":  len(received_files),
+        },
+        "devices":   devices,
+        "timestamp": datetime.now().isoformat(),
+    })
+
+
+@app.route('/api/devices', methods=['GET'])
+@require_parent_auth
+def get_devices():
+    now = time.time()
+    enriched = {}
+    for did, info in devices.items():
+        if did not in control_devices:
+            ls = info.get('last_seen', '')
+            if ls:
+                try:
+                    reg_age = now - datetime.fromisoformat(ls).timestamp()
+                    if reg_age < PENDING_TTL:
+                        d = dict(info)
+                        d['online'] = False
+                        d['pending'] = True
+                        d['last_poll_secs'] = None
+                        d['agent_pid'] = device_agent_pid.get(did, {}).get('pid')
+                        enriched[did] = d
+                except Exception:
+                    pass
+            continue
+
+        age = _device_age(did, now)
+        if age is None or age > STALE_CUTOFF:
+            continue
+
+        d = dict(info)
+        d['online'] = age < OFFLINE_THRESHOLD
+        d['pending'] = False
+        d['last_poll_secs'] = int(age)
+        d['agent_pid'] = device_agent_pid.get(did, {}).get('pid')
+        d['agent_version'] = device_agent_pid.get(did, {}).get('version')
+        d['app_count'] = len(installed_apps.get(did, []))
+        enriched[did] = d
+
+    online_count = sum(1 for d in enriched.values() if d.get('online'))
+    pending_count = sum(1 for d in enriched.values() if d.get('pending'))
+    print(f"📋 [/api/devices] returning {len(enriched)} device(s) — "
+          f"{online_count} online, {pending_count} pending. "
+          f"IDs: {[d[:8] for d in enriched.keys()]}",
+          flush=True)
+
+    return jsonify({"success": True, "devices": enriched})
+
+
+@app.route('/api/device/<device_id>/stats', methods=['GET'])
+@require_parent_auth
+def device_stats(device_id):
+    now = time.time()
+    if device_id not in devices:
+        return jsonify({'success': False, 'error': 'device not found'}), 404
+    age = _device_age(device_id, now)
+    return jsonify({
+        'success':          True,
+        'device_id':        device_id,
+        'online':           _is_device_online(device_id, now),
+        'last_poll_secs':   int(age) if age is not None else None,
+        'app_count':        len(installed_apps.get(device_id, [])),
+        'screenshot_count': sum(1 for s in screenshots if s.get('device_id') == device_id),
+        'queued_cmds':      len(command_queues.get(device_id, [])),
+        'agent_pid':        device_agent_pid.get(device_id, {}).get('pid'),
+        'agent_version':    device_agent_pid.get(device_id, {}).get('version'),
+    })
+
+# ============================================================
+# SCREENSHOTS
+# ============================================================
+def _add_cache_headers(resp, seconds: int = 2):
+    resp.headers['Cache-Control'] = f'public, max-age={seconds}'
+    return resp
+
+
+def _probe_image_dimensions(filepath: Path) -> Tuple[int, int]:
+    try:
+        from PIL import Image  # noqa
+        with Image.open(filepath) as im:
+            return int(im.width), int(im.height)
+    except Exception:
+        return 0, 0
+
+
+@app.route('/api/screenshots', methods=['GET'])
+@require_parent_auth
+def list_screenshots():
+    limit     = request.args.get('limit', 50, type=int)
+    device_id = request.args.get('deviceId', '')
+
+    meta = {s['filename']: s for s in screenshots}
+
+    all_shots = []
+    for directory in [SCREENSHOT_DIR, UPLOAD_DIR]:
+        for pattern in ('*.png', '*.jpg'):
+            for file in directory.glob(pattern):
+                try:
+                    st = file.stat()
+                    m  = meta.get(file.name, {})
+                    width  = int(m.get('width', 0) or 0)
+                    height = int(m.get('height', 0) or 0)
+                    if (width <= 0 or height <= 0):
+                        width, height = _probe_image_dimensions(file)
+                    entry = {
+                        'filename':     file.name,
+                        'timestamp':    datetime.fromtimestamp(st.st_mtime).isoformat(),
+                        'size':         st.st_size,
+                        'url':          f'/api/screenshots/{file.name}',
+                        'device_id':    m.get('device_id'),
+                        'device_model': m.get('device_model'),
+                        'width':        width,
+                        'height':       height,
+                        'origin_x':     int(m.get('origin_x', 0) or 0),
+                        'origin_y':     int(m.get('origin_y', 0) or 0),
+                        'geo_seq':      int(m.get('geo_seq', 0) or 0),
+                        'geo_ts':       int(m.get('geo_ts', 0) or 0),
+                    }
+                    if device_id and entry['device_id'] != device_id:
+                        continue
+                    all_shots.append(entry)
+                except Exception:
+                    pass
+
+    all_shots.sort(key=lambda x: x['timestamp'], reverse=True)
+    return jsonify(all_shots[:limit])
+
+
+@app.route('/api/screenshots/<filename>', methods=['GET'])
+def get_screenshot(filename):
+    if PARENT_PIN:
+        token = _server_token_from_request()
+        if not _is_valid_session(token):
+            return jsonify({"error": "unauthorized"}), 401
+    filename = safe_filename(filename)
+    for directory in [SCREENSHOT_DIR, UPLOAD_DIR]:
+        filepath = directory / filename
+        if filepath.exists():
+            mime = 'image/png' if filename.endswith('.png') else 'image/jpeg'
+            resp = send_file(filepath, mimetype=mime)
+            return _add_cache_headers(resp, seconds=2)
+    return jsonify({"error": "File not found"}), 404
+
+# ============================================================
+# CAMERA
+# ============================================================
+@app.route('/api/camera/photos', methods=['GET'])
+@require_parent_auth
+def list_camera_photos():
+    limit = request.args.get('limit', 50, type=int)
+    photos = []
+    for directory in [CAMERA_DIR, UPLOAD_DIR]:
+        for file in directory.glob('*.jpg'):
+            try:
+                stat = file.stat()
+                photos.append({
+                    'filename':  file.name,
+                    'timestamp': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    'size':      stat.st_size,
+                    'url':       f'/api/camera/photos/{file.name}',
+                })
+            except Exception:
+                pass
+    photos.sort(key=lambda x: x['timestamp'], reverse=True)
+    return jsonify(photos[:limit])
+
+
+@app.route('/api/camera/photos/<filename>', methods=['GET'])
+def get_camera_photo(filename):
+    if PARENT_PIN:
+        token = _server_token_from_request()
+        if not _is_valid_session(token):
+            return jsonify({"error": "unauthorized"}), 401
+    filename = safe_filename(filename)
+    for directory in [CAMERA_DIR, UPLOAD_DIR]:
+        filepath = directory / filename
+        if filepath.exists():
+            resp = send_file(filepath, mimetype='image/jpeg')
+            return _add_cache_headers(resp, seconds=2)
+    return jsonify({"error": "File not found"}), 404
+
+# ============================================================
+# FILES / ACTIVITY
+# ============================================================
+@app.route('/api/files/list', methods=['GET'])
+@require_parent_auth
+def list_files():
+    limit  = request.args.get('limit', 100, type=int)
+    merged = []
+
+    for file in FILES_DIR.glob('*'):
+        try:
+            st = file.stat()
+            merged.append({
+                'name':      file.name,
+                'size':      st.st_size,
+                'size_formatted': f"{st.st_size / 1024:.1f} KB",
+                'modified':  datetime.fromtimestamp(st.st_mtime).isoformat(),
+                'source':    'admin',
+                'url':       None,
+            })
+        except Exception:
+            pass
+
+    with received_files_lock:
+        for f in received_files:
+            merged.append({
+                'name':      f['filename'],
+                'size':      f['size'],
+                'size_formatted': f"{f['size'] / 1024:.1f} KB",
+                'modified':  f['timestamp'],
+                'source':    'received',
+                'device_id': f.get('device_id'),
+                'dev_folder': f.get('dev_folder'),
+                'url':       f.get('url'),
+            })
+
+    merged.sort(key=lambda x: x['modified'], reverse=True)
+    return jsonify(merged[:limit])
+
+# ============================================================
+# FILE EXFILTRATION
+# ============================================================
+def _save_received_file(device_id: str, filename: str, raw: bytes,
+                        source_path: str, mime: str) -> dict:
+    global received_files
+    safe_dev  = safe_filename(device_id or "unknown")[:32]
+    safe_name = safe_filename(filename or "file.bin")
+    dev_dir   = RECEIVED_DIR / safe_dev
+    dev_dir.mkdir(parents=True, exist_ok=True)
+    dest = dev_dir / safe_name
+    if dest.exists():
+        stem, ext = os.path.splitext(safe_name)
+        dest = dev_dir / f"{stem}_{int(time.time())}{ext}"
+    with open(dest, 'wb') as f:
+        f.write(raw)
+    size = dest.stat().st_size
+    entry = {
+        'filename':    dest.name,
+        'device_id':   device_id,
+        'source_path': source_path,
+        'mime':        mime,
+        'size':        size,
+        'timestamp':   datetime.now().isoformat(),
+        'url':         f'/api/files/received/{safe_dev}/{dest.name}',
+        'disk_path':   str(dest),
+        'dev_folder':  safe_dev,
+    }
+    with received_files_lock:
+        received_files.append(entry)
+        if len(received_files) > 2000:
+            received_files[:] = received_files[-2000:]
+    return entry
+
+
+@app.route('/api/monitor/file-upload', methods=['POST'])
+@require_agent_auth
+@rate_limit('upload')
+def monitor_file_upload():
+    try:
+        incoming_id = (
+            request.form.get('deviceId')
+            or (request.json or {}).get('deviceId')
+            or request.args.get('deviceId', 'unknown')
+        )
+        hostname = (
+            request.form.get('deviceModel')
+            or (request.json or {}).get('deviceModel')
+            or ''
+        )
+        public_ip = _get_public_ip_from_request()
+        device_id = _resolve_canonical_id(incoming_id, hostname, public_ip)
+
+        if 'file' in request.files:
+            fobj     = request.files['file']
+            raw      = fobj.read()
+            filename = fobj.filename or 'file.bin'
+            source_path = request.form.get('source_path', filename)
+            mime        = fobj.mimetype or 'application/octet-stream'
+        else:
+            data = request.json or {}
+            b64  = data.get('data_b64') or data.get('data') or ''
+            if not b64:
+                return jsonify({'success': False, 'error': 'no file data'}), 400
+            filename    = data.get('filename', 'file.bin')
+            source_path = data.get('source_path', filename)
+            mime        = data.get('mime', 'application/octet-stream')
+            try:
+                raw = base64.b64decode(b64)
+            except Exception as e:
+                return jsonify({'success': False, 'error': f'bad base64: {e}'}), 400
+
+        size = len(raw)
+        if size == 0:
+            return jsonify({'success': False, 'error': 'empty file'}), 400
+        if size > MAX_RECEIVED_FILE_MB * 1024 * 1024:
+            return jsonify({
+                'success': False,
+                'error': f'file too large '
+                         f'({size // 1024 // 1024}MB > {MAX_RECEIVED_FILE_MB}MB)',
+            }), 413
+
+        entry = _save_received_file(device_id, filename, raw, source_path, mime)
+
+        if device_id in devices:
+            devices[device_id]['last_seen'] = datetime.now().isoformat()
+
+        add_activity(
+            'file_received',
+            f'{entry["filename"]} ({size // 1024}KB) from {device_id[:8]}',
+            device_id,
+        )
+        logger.info(f"📥 Received file {entry['filename']} "
+                    f"({size // 1024}KB) from {device_id[:8]}")
+        return jsonify({
+            'success':   True,
+            'entry':     entry,
+            'device_id': device_id,
+        })
+    except Exception as e:
+        logger.error(f"file_upload error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/files/received', methods=['GET'])
+@require_parent_auth
+def list_received_files():
+    device_id = request.args.get('deviceId', '')
+    limit     = request.args.get('limit', 200, type=int)
+    with received_files_lock:
+        items = list(received_files)
+    if device_id:
+        items = [f for f in items if f.get('device_id') == device_id]
+    items.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    clean = [{k: v for k, v in f.items() if k != 'disk_path'} for f in items[:limit]]
+    total_bytes = sum(f['size'] for f in items)
+    return jsonify({
+        'success':     True,
+        'files':       clean,
+        'count':       len(clean),
+        'total_bytes': total_bytes,
+        'total_mb':    round(total_bytes / 1024 / 1024, 2),
+    })
+
+
+@app.route('/api/files/received/<dev_folder>/<filename>', methods=['GET'])
+def download_received_file(dev_folder, filename):
+    if PARENT_PIN:
+        token = _server_token_from_request()
+        if not _is_valid_session(token):
+            return jsonify({"error": "unauthorized"}), 401
+    dev_folder = safe_filename(dev_folder)
+    filename   = safe_filename(filename)
+    filepath   = RECEIVED_DIR / dev_folder / filename
+    if not filepath.exists():
+        return jsonify({"error": "File not found"}), 404
+    import mimetypes
+    mime = mimetypes.guess_type(str(filepath))[0] or 'application/octet-stream'
+    return send_file(filepath, mimetype=mime, as_attachment=True,
+                     download_name=filename)
+
+
+@app.route('/api/files/received/<dev_folder>/<filename>', methods=['DELETE'])
+@require_parent_auth
+def delete_received_file(dev_folder, filename):
+    global received_files
+    dev_folder = safe_filename(dev_folder)
+    filename   = safe_filename(filename)
+    filepath   = RECEIVED_DIR / dev_folder / filename
+    if not filepath.exists():
+        return jsonify({'success': False, 'error': 'not found'}), 404
+    try:
+        filepath.unlink()
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    with received_files_lock:
+        received_files[:] = [
+            f for f in received_files
+            if not (f.get('dev_folder') == dev_folder and f.get('filename') == filename)
+        ]
+    logger.info(f"🗑️ Deleted received file {dev_folder}/{filename}")
+    return jsonify({'success': True})
+
+
+@app.route('/api/activity', methods=['GET'])
+@require_parent_auth
+def get_activity():
+    limit = request.args.get('limit', 20, type=int)
+    return jsonify({
+        "success":    True,
+        "activities": activities[-limit:],
+        "count":      len(activities),
+    })
+
+# ============================================================
+# APP ENDPOINTS
+# ============================================================
+@app.route('/api/apps', methods=['GET'])
+@require_parent_auth
+def get_apps():
+    device_id = request.args.get('deviceId', '')
+    limit     = request.args.get('limit', 50, type=int)
+    now       = time.time()
+
+    if device_id:
+        age = now - control_devices.get(device_id, 0) if device_id in control_devices else None
+        if age is None or age > APPS_GRACE:
+            return jsonify([])
+        return jsonify(installed_apps.get(device_id, [])[:limit])
+
+    result = []
+    for did, apps in installed_apps.items():
+        age = now - control_devices.get(did, 0) if did in control_devices else None
+        if age is not None and age < APPS_GRACE:
+            result.extend(apps)
+    return jsonify(result[:limit])
+
+
+@app.route('/api/apps/list', methods=['GET'])
+@require_parent_auth
+def apps_list():
+    device_id = request.args.get('deviceId', '')
+    now = time.time()
+    if not device_id:
+        return jsonify([])
+    has_polled = device_id in control_devices
+    age = (now - control_devices.get(device_id, 0)) if has_polled else None
+    if not has_polled:
+        return jsonify([])
+    if age is None or age > APPS_GRACE:
+        return jsonify([])
+    return jsonify(installed_apps.get(device_id, []))
+
+
+@app.route('/api/apps/search', methods=['GET'])
+@require_parent_auth
+def apps_search():
+    q = request.args.get('q', '').lower()
+    device_id = request.args.get('deviceId', '')
+    if not q:
+        return jsonify([])
+    source = []
+    now = time.time()
+    if device_id:
+        age = now - control_devices.get(device_id, 0) if device_id in control_devices else None
+        if age is not None and age < APPS_GRACE:
+            source = installed_apps.get(device_id, [])
+    else:
+        for did, apps in installed_apps.items():
+            age = now - control_devices.get(did, 0) if did in control_devices else None
+            if age is not None and age < APPS_GRACE:
+                source.extend(apps)
+    results = [a for a in source
+               if q in a.get('label', '').lower()
+               or q in a.get('package', '').lower()
+               or q in a.get('name', '').lower()]
+    return jsonify(results[:20])
+
+
+@app.route('/api/locations', methods=['GET'])
+@require_parent_auth
+def get_locations():
+    limit = request.args.get('limit', 50, type=int)
+    return jsonify(locations[-limit:])
+
+
+@app.route('/api/user', methods=['GET'])
+@require_parent_auth
+def get_user():
+    device_id = request.args.get('deviceId', '')
+    if device_id and device_id in devices:
+        info = devices[device_id]
+        return jsonify({
+            "success":       True,
+            "full_name":     info.get('name', 'User'),
+            "email":         info.get('email', ''),
+            "company":       info.get('company', ''),
+            "computer_name": info.get('model', 'Unknown'),
+            "device_id":     device_id,
+        })
+    for device_id, info in devices.items():
+        return jsonify({
+            "success":       True,
+            "full_name":     info.get('name', 'User'),
+            "email":         info.get('email', ''),
+            "company":       info.get('company', ''),
+            "computer_name": info.get('model', 'Unknown'),
+            "device_id":     device_id,
+        })
+    return jsonify({"success": True, "full_name": "Unknown"})
+
+
+@app.route('/api/system/info', methods=['GET'])
+@require_parent_auth
+def system_info():
+    return jsonify({
+        "success":        True,
+        "platform":       platform.system(),
+        "hostname":       socket.gethostname(),
+        "python_version": sys.version.split()[0],
+        "is_render":      IS_RENDER,
+    })
+
+
+@app.route('/api/browser', methods=['GET'])
+@require_parent_auth
+def get_browser():
+    limit = request.args.get('limit', 50, type=int)
+    return jsonify(browser_history[-limit:])
+
+
+@app.route('/api/start', methods=['POST'])
+@require_parent_auth
+def start_monitoring():
+    add_activity('start', 'Monitoring started')
+    return jsonify({"success": True, "status": "started"})
+
+
+@app.route('/api/stop', methods=['POST'])
+@require_parent_auth
+def stop_monitoring():
+    add_activity('stop', 'Monitoring stopped')
+    return jsonify({"success": True, "status": "stopped"})
+
+
+@app.route('/api/debug/webdir', methods=['GET'])
+@require_parent_auth
+def debug_webdir():
+    try:
+        files = list(WEB_DIR.glob('*'))
+        return jsonify({
+            "web_dir":      str(WEB_DIR),
+            "exists":       WEB_DIR.exists(),
+            "files":        [f.name for f in files],
+            "index_exists": (WEB_DIR / 'index.html').exists(),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/ping/status', methods=['GET'])
+@require_parent_auth
+def ping_status():
+    return jsonify({
+        "success":       True,
+        "ping_running":  ping_running,
+        "ping_interval": ping_interval,
+    })
+
+# ============================================================
+# AGENT MONITORING ENDPOINTS
+# ============================================================
+@app.route('/api/monitor/user', methods=['POST'])
+@require_agent_auth
+def monitor_user():
+    try:
+        data        = request.json or {}
+        incoming_id = data.get('deviceId', 'unknown')
+        pid         = data.get('pid')
+        version     = data.get('agent_version', 'unknown')
+        mguid       = data.get('machine_guid', '')
+        hostname    = data.get('hostname', data.get('deviceModel', ''))
+        req_ip      = _get_public_ip_from_request()
+        public_ip   = data.get('public_ip', '') or req_ip
+
+        device_id = _resolve_canonical_id(incoming_id, hostname, public_ip)
+
+        prev = device_agent_pid.get(device_id)
+        if prev and prev.get('pid') != pid:
+            logger.warning(
+                f"⚠️ Device {device_id[:8]} re-registered by new agent "
+                f"(old PID {prev.get('pid')}, new PID {pid})"
+            )
+
+        device_agent_pid[device_id] = {
+            'pid':        pid,
+            'version':    version,
+            'first_seen': prev.get('first_seen') if prev else datetime.now().isoformat(),
+        }
+
+        existing_first_seen = devices.get(device_id, {}).get(
+            'first_seen', datetime.now().isoformat())
+
+        devices[device_id] = {
+            'id':              device_id,
+            'name':            data.get('name', 'User'),
+            'email':           data.get('email', ''),
+            'company':         data.get('company', ''),
+            'model':           data.get('deviceModel', 'Unknown'),
+            'android_version': data.get('androidVersion', data.get('os_version', 'Unknown')),
+            'public_ip':       public_ip,
+            'hostname':        hostname or data.get('deviceModel', 'Unknown'),
+            'machine_guid':    mguid,
+            'agent_version':   version,
+            'first_seen':      existing_first_seen,
+            'last_seen':       datetime.now().isoformat(),
+            'status':          'active' if device_id in control_devices else 'pending',
+        }
+        _mark_device_online(device_id)
+        return jsonify({
+            "success":      True,
+            "device_id":    device_id,
+            "canonical_id": device_id,
+            "was_merged":   device_id != incoming_id,
+        })
+    except Exception as e:
+        logger.error(f"User error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/monitor/screenshot', methods=['POST'])
+@require_agent_auth
+@rate_limit('screenshot')
+def monitor_screenshot():
+    try:
+        data        = request.json or {}
+        filename    = safe_filename(data.get(
+            'filename',
+            f'screenshot_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png',
+        ))
+        image_data  = data.get('data')
+        incoming_id = data.get('deviceId', 'unknown')
+        width       = int(data.get('width', 0) or 0)
+        height      = int(data.get('height', 0) or 0)
+        origin_x    = int(data.get('origin_x', 0) or 0)
+        origin_y    = int(data.get('origin_y', 0) or 0)
+        geo_seq     = int(data.get('geo_seq', 0) or 0)
+        geo_ts      = int(data.get('geo_ts', 0) or 0)
+        dpi_mode    = data.get('dpi_mode', 'unknown')
+        monitors    = data.get('monitors', [])
+        hostname    = data.get('deviceModel', '')
+        public_ip   = _get_public_ip_from_request()
+
+        device_id = _resolve_canonical_id(incoming_id, hostname, public_ip)
+
+        if not image_data:
+            return jsonify({"success": False, "error": "No image data"}), 400
+        image_bytes = base64.b64decode(image_data)
+        filepath    = UPLOAD_DIR / filename
+        with open(filepath, 'wb') as f:
+            f.write(image_bytes)
+        if device_id in devices:
+            devices[device_id]['last_seen'] = datetime.now().isoformat()
+
+        if width > 0 and height > 0:
+            _update_device_screen(device_id, {
+                'width':         width,
+                'height':        height,
+                'origin_x':      origin_x,
+                'origin_y':      origin_y,
+                'monitors':      monitors,
+                'density':       96,
+                'dpi_mode':      dpi_mode,
+                'geo_seq':       geo_seq,
+                'geo_ts':        geo_ts,
+                'agent_version': 'unknown',
+            })
+
+        screenshots.append({
+            'filename':     filename,
+            'device_id':    device_id,
+            'device_model': hostname or 'Unknown',
+            'timestamp':    datetime.now().isoformat(),
+            'size':         filepath.stat().st_size,
+            'width':        width,
+            'height':       height,
+            'origin_x':     origin_x,
+            'origin_y':     origin_y,
+            'geo_seq':      geo_seq,
+            'geo_ts':       geo_ts,
+            'url':          f'/api/screenshots/{filename}',
+            '_ts':          time.time(),
+        })
+        _prune_screenshot_index()
+        return jsonify({"success": True, "filename": filename,
+                        "device_id": device_id})
+    except Exception as e:
+        logger.error(f"Screenshot error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/monitor/camera', methods=['POST'])
+@require_agent_auth
+def monitor_camera():
+    try:
+        data        = request.json or {}
+        filename    = safe_filename(data.get(
+            'filename',
+            f'camera_{datetime.now().strftime("%Y%m%d_%H%M%S")}.jpg',
+        ))
+        image_data  = data.get('data')
+        incoming_id = data.get('deviceId', 'unknown')
+        hostname    = data.get('deviceModel', '')
+        public_ip   = _get_public_ip_from_request()
+        device_id   = _resolve_canonical_id(incoming_id, hostname, public_ip)
+
+        if not image_data:
+            return jsonify({"success": False, "error": "No image data"}), 400
+        image_bytes = base64.b64decode(image_data)
+        filepath    = UPLOAD_DIR / filename
+        with open(filepath, 'wb') as f:
+            f.write(image_bytes)
+        if device_id in devices:
+            devices[device_id]['last_seen'] = datetime.now().isoformat()
+        camera_photos.append({
+            'filename':  filename,
+            'device_id': device_id,
+            'timestamp': datetime.now().isoformat(),
+            'url':       f'/api/camera/photos/{filename}',
+        })
+        return jsonify({"success": True, "filename": filename})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/monitor/location', methods=['POST'])
+@require_agent_auth
+def monitor_location():
+    try:
+        data        = request.json or {}
+        incoming_id = data.get('deviceId', 'unknown')
+        hostname    = data.get('deviceModel', '')
+        public_ip   = _get_public_ip_from_request()
+        device_id   = _resolve_canonical_id(incoming_id, hostname, public_ip)
+
+        lat = data.get('latitude')
+        lon = data.get('longitude')
+        if lat is None or lon is None:
+            return jsonify({"success": False, "error": "No location"}), 400
+        if device_id in devices:
+            devices[device_id]['last_seen'] = datetime.now().isoformat()
+        locations.append({
+            'device_id': device_id,
+            'latitude':  lat,
+            'longitude': lon,
+            'accuracy':  data.get('accuracy', 0),
+            'timestamp': datetime.now().isoformat(),
+        })
+        if len(locations) > 500:
+            locations[:] = locations[-500:]
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/monitor/apps', methods=['POST'])
+@require_agent_auth
+def monitor_apps():
+    try:
+        data        = request.json or {}
+        incoming_id = data.get('deviceId', 'unknown')
+        hostname    = data.get('deviceModel', '')
+        public_ip   = _get_public_ip_from_request()
+        device_id   = _resolve_canonical_id(incoming_id, hostname, public_ip)
+
+        apps = data.get('apps', [])
+        if device_id in devices:
+            devices[device_id]['last_seen'] = datetime.now().isoformat()
+
+        if apps and isinstance(apps[0], dict) and 'label' in apps[0]:
+            installed_apps[device_id] = apps
+        else:
+            app_usage.append({
+                'device_id': device_id,
+                'apps':      apps,
+                'count':     len(apps),
+                'timestamp': datetime.now().isoformat(),
+            })
+            if len(app_usage) > 500:
+                app_usage[:] = app_usage[-500:]
+        return jsonify({"success": True, "count": len(apps),
+                        "device_id": device_id})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/monitor/running-apps', methods=['POST'])
+@require_agent_auth
+def monitor_running_apps():
+    try:
+        data        = request.json or {}
+        incoming_id = data.get('deviceId', 'unknown')
+        hostname    = data.get('deviceModel', '')
+        public_ip   = _get_public_ip_from_request()
+        device_id   = _resolve_canonical_id(incoming_id, hostname, public_ip)
+
+        apps = data.get('apps', [])
+        if device_id in devices:
+            devices[device_id]['last_seen'] = datetime.now().isoformat()
+        app_usage.append({
+            'device_id': device_id,
+            'apps':      apps,
+            'count':     len(apps),
+            'timestamp': datetime.now().isoformat(),
+        })
+        if len(app_usage) > 500:
+            app_usage[:] = app_usage[-500:]
+        return jsonify({"success": True, "count": len(apps)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/monitor/screen-info', methods=['POST'])
+@require_agent_auth
+def monitor_screen_info():
+    try:
+        data        = request.json or {}
+        incoming_id = data.get('deviceId', 'unknown')
+        hostname    = data.get('deviceModel', '')
+        public_ip   = _get_public_ip_from_request()
+        device_id   = _resolve_canonical_id(incoming_id, hostname, public_ip)
+
+        width  = int(data.get('width', 0) or 0)
+        height = int(data.get('height', 0) or 0)
+        if width <= 0 or height <= 0:
+            logger.warning(f"screen-info rejected: invalid geometry "
+                           f"{width}x{height} from {device_id[:8]}")
+            return jsonify({"success": False, "error": "invalid geometry"}), 400
+
+        _update_device_screen(device_id, {
+            'width':         width,
+            'height':        height,
+            'origin_x':      int(data.get('origin_x', 0) or 0),
+            'origin_y':      int(data.get('origin_y', 0) or 0),
+            'monitors':      data.get('monitors', []),
+            'density':       int(data.get('density', 96)) or 96,
+            'dpi_mode':      data.get('dpi_mode', 'unknown'),
+            'agent_version': data.get('agent_version', 'unknown'),
+            'geo_seq':       int(data.get('geo_seq', 0) or 0),
+            'geo_ts':        int(data.get('geo_ts', 0) or 0),
+        })
+        s = device_screens[device_id]
+        logger.info(f"📐 screen-info {device_id[:8]}: "
+                    f"{s['width']}x{s['height']} "
+                    f"origin=({s['origin_x']},{s['origin_y']}) "
+                    f"seq={s['geo_seq']} dpi={s['dpi_mode']}")
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# ============================================================
+# REMOTE CONTROL
+# ============================================================
+class DeviceOfflineError(Exception):
+    pass
+
+
+def _enqueue(device_id: str, action: str,
+             params: dict = None, ttl: float = 12.0) -> str:
+    now = time.time()
+    last_poll = control_devices.get(device_id, 0)
+
+    if not last_poll:
+        ls = devices.get(device_id, {}).get('last_seen', '')
+        if ls:
+            try:
+                last_poll = datetime.fromisoformat(ls).timestamp()
+            except Exception:
+                last_poll = 0
+
+    if not last_poll:
+        raise DeviceOfflineError(f"device {device_id[:8]} has never polled")
+
+    age = now - last_poll
+    if age > OFFLINE_THRESHOLD:
+        shown_age = min(int(age), 86400 * 365)
+        raise DeviceOfflineError(f"device {device_id[:8]} offline for {shown_age}s")
+
+    cmd_id = str(uuid.uuid4())
+    item = {
+        'id':      cmd_id,
+        'action':  action,
+        'params':  params or {},
+        'created': now,
+        'ttl':     ttl,
+    }
+    command_queues[device_id].append(item)
+    logger.info(f"🎮 Queued '{action}' for {device_id[:8]} (id={cmd_id[:8]})")
+    return cmd_id
+
+
+def _enqueue_response(device_id, action, params=None, ttl=12.0):
+    try:
+        cid = _enqueue(device_id, action, params, ttl)
+        return {'success': True, 'id': cid}, 200
+    except DeviceOfflineError as e:
+        logger.warning(f"❌ Refused command '{action}': {e}")
+        return {'success': False, 'error': str(e), 'offline': True}, 503
+
+
+@app.route('/api/control/poll', methods=['GET', 'OPTIONS'])
+@require_agent_auth
+def control_poll():
+    if request.method == 'OPTIONS':
+        return '', 204
+
+    incoming_id = request.args.get('deviceId', 'unknown')
+
+    if _is_placeholder_id(incoming_id):
+        logger.warning(f"🚫 Refused poll from placeholder ID: {incoming_id}")
+        return jsonify({"success": False,
+                        "error": "placeholder id not allowed"}), 400
+
+    public_ip = _get_public_ip_from_request()
+    device_id = _resolve_canonical_id(incoming_id, "", public_ip)
+
+    control_devices[device_id] = time.time()
+
+    poll_counts[device_id] += 1
+    if poll_counts[device_id] % 10 == 1:
+        print(f"📡 [poll] device={device_id[:8]} poll #{poll_counts[device_id]}",
+              flush=True)
+
+    if device_id in devices:
+        devices[device_id]['last_seen'] = datetime.now().isoformat()
+        devices[device_id]['status']    = 'active'
+    else:
+        devices[device_id] = {
+            'id':              device_id,
+            'name':            f"Device {device_id[:8]}",
+            'email':           '',
+            'company':         '',
+            'model':           'Unknown (registering...)',
+            'android_version': 'Unknown',
+            'public_ip':       public_ip,
+            'hostname':        'Unknown',
+            'machine_guid':    '',
+            'agent_version':   'unknown',
+            'first_seen':      datetime.now().isoformat(),
+            'last_seen':       datetime.now().isoformat(),
+            'status':          'active',
+            'provisional':     True,
+        }
+
+    _mark_device_online(device_id)
+    now = time.time()
+    q = command_queues[device_id]
+    fresh = deque(item for item in q if now - item['created'] <= item['ttl'])
+    command_queues[device_id] = fresh
+    return jsonify(list(fresh))
+
+
+@app.route('/api/control/result', methods=['POST', 'OPTIONS'])
+@require_agent_auth
+def control_result():
+    if request.method == 'OPTIONS':
+        return '', 204
+    data = request.json or {}
+    cid  = data.get('id')
+    if cid:
+        ok = bool(data.get('ok'))
+        command_results[cid] = {
+            'ok':        ok,
+            'error':     data.get('error', ''),
+            'data':      data.get('data'),
+            'action':    data.get('action', ''),
+            'timestamp': time.time(),
+            'deviceId':  data.get('deviceId', 'unknown'),
+        }
+        status = "✅" if ok else f"❌ {data.get('error', '')[:80]}"
+        add_activity('control',
+                     f'Action {cid[:8]} ({data.get("action", "?")}) → {status}',
+                     data.get('deviceId', 'unknown'))
+    return jsonify({'success': True})
+
+
+# ---- Input commands ----
+@app.route('/api/control/tap', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_tap():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'tap',
+        {'x': d.get('x', 0), 'y': d.get('y', 0)})
+    return jsonify(payload), code
+
+
+@app.route('/api/control/longpress', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_longpress():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'longpress',
+        {'x': d.get('x', 0), 'y': d.get('y', 0)})
+    return jsonify(payload), code
+
+
+@app.route('/api/control/swipe', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_swipe():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'swipe', {
+            'x1': d.get('x1', 0), 'y1': d.get('y1', 0),
+            'x2': d.get('x2', 0), 'y2': d.get('y2', 0),
+            'duration': d.get('duration', 300),
+        })
+    return jsonify(payload), code
+
+
+@app.route('/api/control/swipe-normalized', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_swipe_normalized():
+    d = request.json or {}
+    try:
+        nx1 = float(d.get('nx1')); ny1 = float(d.get('ny1'))
+        nx2 = float(d.get('nx2')); ny2 = float(d.get('ny2'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False,
+                        'error': 'nx1, ny1, nx2, ny2 required (0..1)'}), 400
+    for v in (nx1, ny1, nx2, ny2):
+        if not (0.0 <= v <= 1.0):
+            return jsonify({'success': False,
+                            'error': 'all coords must be in [0,1]'}), 400
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'click_normalized',
+        {'kind': 'swipe',
+         'nx1': nx1, 'ny1': ny1, 'nx2': nx2, 'ny2': ny2,
+         'duration': int(d.get('duration', 250))})
+    return jsonify(payload), code
+
+
+@app.route('/api/control/scroll-normalized', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_scroll_normalized():
+    d = request.json or {}
+    try:
+        nx = float(d.get('nx')); ny = float(d.get('ny'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False,
+                        'error': 'nx, ny required (0..1)'}), 400
+    if not (0.0 <= nx <= 1.0 and 0.0 <= ny <= 1.0):
+        return jsonify({'success': False,
+                        'error': 'nx, ny must be in [0,1]'}), 400
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'click_normalized',
+        {'kind': 'scroll', 'nx': nx, 'ny': ny,
+         'amount': int(d.get('amount', 3))})
+    return jsonify(payload), code
+
+
+@app.route('/api/control/text', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_text():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'text', {'text': d.get('text', '')})
+    return jsonify(payload), code
+
+
+@app.route('/api/control/backspace', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_backspace():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'backspace', {})
+    return jsonify(payload), code
+
+
+@app.route('/api/control/key', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_key():
+    d = request.json or {}
+    key = d.get('key', 'home')
+    valid = ('home', 'back', 'recents', 'notifications',
+             'lock', 'wake', 'screenshot')
+    if key not in valid:
+        return jsonify({'success': False, 'error': 'unknown key'}), 400
+    payload, code = _enqueue_response(d.get('deviceId', 'unknown'), key, {})
+    return jsonify(payload), code
+
+
+@app.route('/api/control/rightclick', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_rightclick():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'rightclick',
+        {'x': d.get('x', 0), 'y': d.get('y', 0)})
+    return jsonify(payload), code
+
+
+@app.route('/api/control/doubleclick', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_doubleclick():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'doubleclick',
+        {'x': d.get('x', 0), 'y': d.get('y', 0)})
+    return jsonify(payload), code
+
+
+@app.route('/api/control/click-normalized', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_click_normalized():
+    d = request.json or {}
+    try:
+        nx = float(d.get('nx'))
+        ny = float(d.get('ny'))
+    except (TypeError, ValueError):
+        return jsonify({'success': False,
+                        'error': 'nx, ny required (0..1)'}), 400
+    if not (0.0 <= nx <= 1.0 and 0.0 <= ny <= 1.0):
+        return jsonify({'success': False,
+                        'error': 'nx, ny must be in [0,1]'}), 400
+    kind = str(d.get('kind', 'tap')).lower()
+    if kind not in ('tap', 'doubleclick', 'rightclick', 'longpress'):
+        return jsonify({'success': False, 'error': 'bad kind'}), 400
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'click_normalized',
+        {'nx': nx, 'ny': ny, 'kind': kind})
+    return jsonify(payload), code
+
+
+@app.route('/api/control/scroll', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_scroll():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'scroll', {
+            'x': d.get('x', 0), 'y': d.get('y', 0),
+            'amount': d.get('amount', 0),
+        })
+    return jsonify(payload), code
+
+
+@app.route('/api/control/hotkey', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_hotkey():
+    d = request.json or {}
+    keys = d.get('keys', '')
+    if not keys:
+        return jsonify({'success': False, 'error': 'keys required'}), 400
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'hotkey', {'keys': keys})
+    return jsonify(payload), code
+
+
+@app.route('/api/control/launch', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_launch():
+    d = request.json or {}
+    device_id = d.get('deviceId', 'unknown')
+    package   = d.get('package', '')
+    if not package:
+        return jsonify({'success': False, 'error': 'package required'}), 400
+    payload, code = _enqueue_response(device_id, 'launch', {'package': package})
+    if code == 200:
+        add_activity('launch', f'Launch: {package[:60]}', device_id)
+    return jsonify(payload), code
+
+
+@app.route('/api/control/launch-history', methods=['GET'])
+@require_parent_auth
+def control_launch_history():
+    device_id = request.args.get('deviceId', '')
+    limit     = request.args.get('limit', 20, type=int)
+    launches  = [
+        a for a in activities[-200:]
+        if a.get('action') == 'launch'
+        or (a.get('action') == 'control'
+            and 'launch' in a.get('details', '').lower())
+    ]
+    if device_id:
+        launches = [a for a in launches if a.get('device_id') == device_id]
+    return jsonify({'success': True, 'launches': launches[-limit:]})
+
+
+@app.route('/api/control/screen-info/<device_id>', methods=['GET'])
+@require_parent_auth
+def control_screen_info(device_id):
+    """
+    Returns the exact, agent-signed geometry for this device. Never
+    returns width=0 if real geometry exists. Priority:
+      1) in-memory device_screens[device_id] (set by agent screenshots
+         and screen-info, monotonic by geo_seq),
+      2) newest in-memory screenshot's width/height for this device,
+      3) PIL probe of the newest on-disk JPEG for this device.
+    """
+    info = dict(device_screens.get(device_id, {}))
+
+    if not info or not info.get('width'):
+        for s in reversed(screenshots):
+            if s.get('device_id') == device_id and s.get('width', 0) > 0:
+                info = {
+                    'width':     int(s['width']),
+                    'height':    int(s['height']),
+                    'origin_x':  int(s.get('origin_x', 0) or 0),
+                    'origin_y':  int(s.get('origin_y', 0) or 0),
+                    'monitors':  s.get('monitors', []),
+                    'density':   96,
+                    'geo_seq':   int(s.get('geo_seq', 0) or 0),
+                    'geo_ts':    int(s.get('geo_ts', 0) or 0),
+                    'source':    'memory_index',
+                }
+                break
+
+    if not info or not info.get('width') or not info.get('height'):
+        disk = _last_known_screen_from_disk(device_id)
+        if disk:
+            info = disk
+
+    if not info or not info.get('width') or not info.get('height'):
+        return jsonify({
+            'width': 0, 'height': 0, 'density': 0,
+            'origin_x': 0, 'origin_y': 0,
+            'geo_seq': 0, 'geo_ts': 0,
+            'known': False,
+        })
+
+    return jsonify({
+        'width':      int(info.get('width', 0)),
+        'height':     int(info.get('height', 0)),
+        'origin_x':   int(info.get('origin_x', 0) or 0),
+        'origin_y':   int(info.get('origin_y', 0) or 0),
+        'monitors':   info.get('monitors', []),
+        'density':    int(info.get('density', 96)) or 96,
+        'dpi_mode':   info.get('dpi_mode', 'unknown'),
+        'geo_seq':    int(info.get('geo_seq', 0) or 0),
+        'geo_ts':     int(info.get('geo_ts', 0) or 0),
+        'known':      True,
+        'source':     info.get('source', 'screen_info'),
+    })
+
+
+@app.route('/api/control/status/<cmd_id>', methods=['GET'])
+@require_parent_auth
+def control_status(cmd_id):
+    r = command_results.get(cmd_id)
+    if not r:
+        return jsonify({'success': True, 'pending': True})
+    return jsonify({'success': True, 'pending': False, **r})
+
+
+@app.route('/api/control/status-batch', methods=['POST'])
+@require_parent_auth
+def control_status_batch():
+    ids = (request.json or {}).get('ids', [])
+    out = {}
+    for cid in ids:
+        r = command_results.get(cid)
+        if r:
+            out[cid] = r
+    return jsonify({'success': True, 'results': out})
+
+
+@app.route('/api/control/devices', methods=['GET'])
+@require_parent_auth
+def control_devices_list():
+    now = time.time()
+    online = {k: _is_device_online(k, now) for k in devices.keys()}
+    return jsonify({'success': True, 'devices': online})
+
+# ============================================================
+# FETCH FILE / FOLDER
+# ============================================================
+@app.route('/api/control/fetch-file', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_fetch_file():
+    d = request.json or {}
+    path = (d.get('path') or '').strip()
+    if not path:
+        return jsonify({'success': False, 'error': 'path required'}), 400
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'fetch_file',
+        {'path': path}, ttl=30.0)
+    if code == 200:
+        add_activity('fetch_file',
+                     f'Fetch: {path[:120]}',
+                     d.get('deviceId', 'unknown'))
+    return jsonify(payload), code
+
+
+@app.route('/api/control/fetch-folder', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_fetch_folder():
+    d = request.json or {}
+    path  = (d.get('path') or '').strip()
+    glob  = (d.get('glob') or '*').strip() or '*'
+    max_n = int(d.get('max', 20))
+    max_n = max(1, min(max_n, 50))
+    if not path:
+        return jsonify({'success': False, 'error': 'path required'}), 400
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'fetch_folder',
+        {'path': path, 'glob': glob, 'max': max_n}, ttl=45.0)
+    if code == 200:
+        add_activity('fetch_folder',
+                     f'Fetch folder: {path}\\{glob} (max {max_n})',
+                     d.get('deviceId', 'unknown'))
+    return jsonify(payload), code
+
+# ============================================================
+# GODMODE
+# ============================================================
+@app.route('/api/control/clipboard-get', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_clipboard_get():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'clipboard_get', {}, ttl=20.0)
+    return jsonify(payload), code
+
+
+@app.route('/api/control/clipboard-set', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_clipboard_set():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'clipboard_set',
+        {'text': d.get('text', '')}, ttl=20.0)
+    return jsonify(payload), code
+
+
+@app.route('/api/control/power', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_power():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'power',
+        {'action': d.get('action', '')}, ttl=15.0)
+    return jsonify(payload), code
+
+
+@app.route('/api/control/list-dir', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_list_dir():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'list_dir',
+        {'path': d.get('path', '')}, ttl=20.0)
+    return jsonify(payload), code
+
+
+@app.route('/api/control/kill', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_kill():
+    d = request.json or {}
+    payload, code = _enqueue_response(
+        d.get('deviceId', 'unknown'), 'kill',
+        {'name': d.get('name', '')}, ttl=15.0)
+    return jsonify(payload), code
+
+# ============================================================
+# TELEGRAM ENDPOINTS
+# ============================================================
+@app.route('/api/telegram/status', methods=['GET'])
+@require_parent_auth
+def telegram_status():
+    return jsonify({
+        "success":        True,
+        "enabled":        telegram_config.get("enabled", False),
+        "configured":     bool(telegram_config.get("bot_token")
+                               and telegram_config.get("chat_id")),
+        "notify_online":  telegram_config.get("notify_online", True),
+        "notify_offline": telegram_config.get("notify_offline", True),
+    })
+
+
+@app.route('/api/telegram/config', methods=['GET', 'POST'])
+@require_parent_auth
+def telegram_config_endpoint():
+    global telegram_config
+    if request.method == 'GET':
+        return jsonify({
+            'success': True,
+            'config': {
+                'bot_token':      telegram_config.get('bot_token', ''),
+                'chat_id':        telegram_config.get('chat_id', ''),
+                'enabled':        telegram_config.get('enabled', False),
+                'notify_online':  telegram_config.get('notify_online', True),
+                'notify_offline': telegram_config.get('notify_offline', True),
+            }
+        })
+    data = request.json or {}
+    if 'bot_token'      in data:
+        telegram_config['bot_token'] = str(data['bot_token']).strip()
+    if 'chat_id'        in data:
+        telegram_config['chat_id']   = str(data['chat_id']).strip()
+    if 'enabled'        in data:
+        telegram_config['enabled']        = bool(data['enabled'])
+    if 'notify_online'  in data:
+        telegram_config['notify_online']  = bool(data['notify_online'])
+    if 'notify_offline' in data:
+        telegram_config['notify_offline'] = bool(data['notify_offline'])
+    _save_telegram_config()
+    logger.info(f"📲 Telegram config updated (enabled={telegram_config['enabled']})")
+    return jsonify({'success': True})
+
+
+@app.route('/api/telegram/test', methods=['POST'])
+@require_parent_auth
+@rate_limit('telegram')
+def telegram_test():
+    r = _telegram_send_message(
+        "🛡️ <b>PACON</b>\n\n✅ Telegram integration is connected.\n"
+        f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    return jsonify(r)
+
+
+@app.route('/api/telegram/send-screenshot/<filename>', methods=['POST'])
+@require_parent_auth
+@rate_limit('telegram')
+def telegram_send_screenshot(filename):
+    filename = safe_filename(filename)
+    for directory in [UPLOAD_DIR, SCREENSHOT_DIR]:
+        filepath = directory / filename
+        if filepath.exists():
+            device_id = request.args.get('deviceId', '')
+            caption = "📸 <b>Screenshot</b>"
+            if device_id:
+                caption += f"\n📱 Device: <code>{device_id[:12]}</code>"
+            caption += f"\n🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            r = _telegram_send_photo(filepath, caption)
+            add_activity('telegram', f'Sent screenshot {filename}', device_id)
+            return jsonify(r)
+    return jsonify({'success': False, 'error': f'File not found: {filename}'}), 404
+
+
+@app.route('/api/telegram/send-camera/<filename>', methods=['POST'])
+@require_parent_auth
+@rate_limit('telegram')
+def telegram_send_camera(filename):
+    filename = safe_filename(filename)
+    for directory in [UPLOAD_DIR, CAMERA_DIR]:
+        filepath = directory / filename
+        if filepath.exists():
+            caption = (f"📷 <b>Camera Photo</b>\n"
+                       f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            r = _telegram_send_photo(filepath, caption)
+            add_activity('telegram', f'Sent camera photo {filename}')
+            return jsonify(r)
+    return jsonify({'success': False, 'error': f'File not found: {filename}'}), 404
+
+
+@app.route('/api/telegram/send-file/<filename>', methods=['POST'])
+@require_parent_auth
+@rate_limit('telegram')
+def telegram_send_file(filename):
+    filename = safe_filename(filename)
+    source   = (request.args.get('source') or 'files').lower()
+    dev_fold = safe_filename(request.args.get('dev_folder', '') or '')
+    candidates = []
+    if source == 'received':
+        if not dev_fold:
+            return jsonify({'success': False, 'error': 'dev_folder required'}), 400
+        candidates.append(RECEIVED_DIR / dev_fold / filename)
+    elif source == 'uploads':
+        candidates.append(UPLOAD_DIR / filename)
+    else:
+        candidates.append(FILES_DIR / filename)
+        candidates.append(UPLOAD_DIR / filename)
+
+    for filepath in candidates:
+        if filepath.exists():
+            device_id = request.args.get('deviceId', '')
+            size_kb = filepath.stat().st_size // 1024
+            caption = f"📎 <b>File</b>: <code>{filename}</code>\n📦 {size_kb} KB"
+            if device_id:
+                caption += f"\n📱 Device: <code>{device_id[:12]}</code>"
+            caption += f"\n🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            r = _telegram_send_document(filepath, caption)
+            add_activity('telegram', f'Sent file {filename}', device_id)
+            return jsonify(r)
+    return jsonify({'success': False, 'error': f'File not found: {filename}'}), 404
+
+
+@app.route('/api/telegram/send-apps', methods=['POST'])
+@require_parent_auth
+@rate_limit('telegram')
+def telegram_send_apps():
+    data = request.json or {}
+    device_id = data.get('deviceId', '')
+    apps = installed_apps.get(device_id, []) if device_id else []
+    if not apps and not device_id:
+        for a in installed_apps.values():
+            apps = a
+            break
+    if not apps:
+        return jsonify({'success': False, 'error': 'No apps reported'})
+    lines = [f"📱 <b>Installed Apps</b> ({len(apps)})"]
+    if device_id:
+        lines.append(f"Device: <code>{device_id[:12]}</code>")
+    lines.append("")
+    for a in apps[:80]:
+        label = (a.get('label') or a.get('name') or 'Unknown')[:50]
+        lines.append(f"• {label}")
+    if len(apps) > 80:
+        lines.append(f"… and {len(apps) - 80} more")
+    r = _telegram_send_message("\n".join(lines))
+    add_activity('telegram', f'Sent apps list ({len(apps)})', device_id)
+    return jsonify(r)
+
+
+@app.route('/api/telegram/send-text', methods=['POST'])
+@require_parent_auth
+@rate_limit('telegram')
+def telegram_send_text():
+    data = request.json or {}
+    text = str(data.get('text', '')).strip()
+    if not text:
+        return jsonify({'success': False, 'error': 'No text'}), 400
+    r = _telegram_send_message(text)
+    add_activity('telegram', f'Sent text ({len(text)} chars)')
+    return jsonify(r)
+
+# ============================================================
+# ERROR HANDLERS
+# ============================================================
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"success": False, "error": "Endpoint not found"}), 404
+
+
+@app.errorhandler(413)
+def request_too_large(e):
+    return jsonify({"success": False,
+                    "error": "File too large for upload (max 64MB)"}), 413
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logger.exception(f"Unhandled: {e}")
+    return jsonify({"success": False, "error": str(e)}), 500
+
+# ============================================================
+# GRACEFUL SHUTDOWN
+# ============================================================
+def _on_signal(signum, frame):
+    logger.info(f"🛑 Received signal {signum}; shutting down")
+    _stop_event.set()
+
+
+try:
+    signal.signal(signal.SIGINT,  _on_signal)
+    signal.signal(signal.SIGTERM, _on_signal)
+except Exception:
+    pass
+
+# ============================================================
+# MAIN
+# ============================================================
+def main():
+    print("=" * 70)
+    print("  PACON SERVICE v1.2.11 — FORCE-EXACT SCREEN GEOMETRY")
+    print("=" * 70)
+    print(f"  Web dir:          {WEB_DIR}")
+    print(f"  Received dir:     {RECEIVED_DIR}")
+    print(f"  Running on Render:{IS_RENDER}")
+    print(f"  Parent PIN:       {'SET' if PARENT_PIN else 'NOT SET'}")
+    print(f"  Agent PIN:        {'SET' if AGENT_PIN else 'NOT SET'}")
+    print(f"  Telegram:         {'ENABLED' if telegram_config.get('enabled') else 'disabled'}")
+    print(f"  Offline threshold:{OFFLINE_THRESHOLD}s")
+    print(f"  Apps grace:       {APPS_GRACE}s")
+    print(f"  Max upload:       {MAX_RECEIVED_FILE_MB}MB per file / 64MB per request")
+    print("=" * 70)
+
+    logger.info(f"Web dir: {WEB_DIR}")
+    logger.info(f"Running on Render: {IS_RENDER}")
+    logger.info(f"Parent PIN: {'SET' if PARENT_PIN else 'NOT SET (unprotected)'}")
+    logger.info(f"Agent PIN:  {'SET' if AGENT_PIN else 'NOT SET (unprotected)'}")
+    logger.info(f"Telegram:   {'ENABLED' if telegram_config.get('enabled') else 'disabled'}")
+
+    start_ping_system()
+    start_watchdog()
+
+    try:
+        app.run(host='0.0.0.0', port=5001, debug=False, threaded=True)
+    except KeyboardInterrupt:
+        logger.info("🛑 Interrupted by user")
+    finally:
+        _stop_event.set()
+
+
+if __name__ == '__main__':
+    main()
